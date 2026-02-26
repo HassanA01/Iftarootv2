@@ -13,18 +13,18 @@ import (
 type MessageType string
 
 const (
-	MsgPlayerJoined      MessageType = "player_joined"
-	MsgPlayerLeft        MessageType = "player_left"
-	MsgGameStarted       MessageType = "game_started"
-	MsgQuestion          MessageType = "question"
-	MsgAnswerSubmitted   MessageType = "answer_submitted"
-	MsgAnswerReveal      MessageType = "answer_reveal"
-	MsgLeaderboard       MessageType = "leaderboard"
-	MsgNextQuestion      MessageType = "next_question"
-	MsgGameOver          MessageType = "game_over"
-	MsgPodium            MessageType = "podium"
-	MsgError             MessageType = "error"
-	MsgPing              MessageType = "ping"
+	MsgPlayerJoined    MessageType = "player_joined"
+	MsgPlayerLeft      MessageType = "player_left"
+	MsgGameStarted     MessageType = "game_started"
+	MsgQuestion        MessageType = "question"
+	MsgAnswerSubmitted MessageType = "answer_submitted"
+	MsgAnswerReveal    MessageType = "answer_reveal"
+	MsgLeaderboard     MessageType = "leaderboard"
+	MsgNextQuestion    MessageType = "next_question"
+	MsgGameOver        MessageType = "game_over"
+	MsgPodium          MessageType = "podium"
+	MsgError           MessageType = "error"
+	MsgPing            MessageType = "ping"
 )
 
 // Message is the envelope for all WebSocket communication.
@@ -43,9 +43,9 @@ type Client struct {
 
 // Hub maintains active game rooms and broadcasts messages.
 type Hub struct {
-	mu      sync.RWMutex
-	rooms   map[string]map[*Client]bool // sessionCode -> clients
-	redis   *redis.Client
+	mu    sync.RWMutex
+	rooms map[string]map[*Client]bool // sessionCode -> clients
+	redis *redis.Client
 }
 
 func New(redisClient *redis.Client) *Hub {

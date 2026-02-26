@@ -8,10 +8,11 @@ import (
 	"net/http"
 	"time"
 
-	appMiddleware "github.com/HassanA01/Iftarootv2/backend/internal/middleware"
-	"github.com/HassanA01/Iftarootv2/backend/internal/models"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+
+	appMiddleware "github.com/HassanA01/Iftarootv2/backend/internal/middleware"
+	"github.com/HassanA01/Iftarootv2/backend/internal/models"
 )
 
 func (h *Handler) CreateSession(w http.ResponseWriter, r *http.Request) {

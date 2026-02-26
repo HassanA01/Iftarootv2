@@ -6,10 +6,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/HassanA01/Iftarootv2/backend/internal/hub"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+
+	"github.com/HassanA01/Iftarootv2/backend/internal/hub"
 )
 
 var upgrader = websocket.Upgrader{

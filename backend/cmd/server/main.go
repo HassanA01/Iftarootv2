@@ -9,14 +9,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/HassanA01/Iftarootv2/backend/internal/config"
-	"github.com/HassanA01/Iftarootv2/backend/internal/db"
-	"github.com/HassanA01/Iftarootv2/backend/internal/handlers"
-	"github.com/HassanA01/Iftarootv2/backend/internal/hub"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/joho/godotenv"
+
+	"github.com/HassanA01/Iftarootv2/backend/internal/config"
+	"github.com/HassanA01/Iftarootv2/backend/internal/db"
+	"github.com/HassanA01/Iftarootv2/backend/internal/handlers"
+	"github.com/HassanA01/Iftarootv2/backend/internal/hub"
 )
 
 func main() {

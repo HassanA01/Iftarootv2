@@ -4,10 +4,11 @@ import (
 	"encoding/json"
 	"net/http"
 
-	appMiddleware "github.com/HassanA01/Iftarootv2/backend/internal/middleware"
-	"github.com/HassanA01/Iftarootv2/backend/internal/models"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+
+	appMiddleware "github.com/HassanA01/Iftarootv2/backend/internal/middleware"
+	"github.com/HassanA01/Iftarootv2/backend/internal/models"
 )
 
 func (h *Handler) ListQuizzes(w http.ResponseWriter, r *http.Request) {
