@@ -1,0 +1,8 @@
+DROP TABLE IF EXISTS game_answers;
+DROP TABLE IF EXISTS game_players;
+DROP TABLE IF EXISTS game_sessions;
+DROP TABLE IF EXISTS options;
+DROP TABLE IF EXISTS questions;
+DROP TABLE IF EXISTS quizzes;
+DROP TABLE IF EXISTS admins;
+DROP EXTENSION IF EXISTS "uuid-ossp";

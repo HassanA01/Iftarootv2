@@ -1,0 +1,109 @@
+package handlers
+
+import (
+	"encoding/json"
+	"net/http"
+	"time"
+
+	"github.com/HassanA01/Iftarootv2/backend/internal/models"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
+)
+
+type registerRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type loginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type authResponse struct {
+	Token string       `json:"token"`
+	Admin models.Admin `json:"admin"`
+}
+
+func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
+	var req registerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Email == "" || req.Password == "" {
+		writeError(w, http.StatusBadRequest, "email and password are required")
+		return
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to hash password")
+		return
+	}
+
+	admin := models.Admin{
+		ID:           uuid.New(),
+		Email:        req.Email,
+		PasswordHash: string(hash),
+		CreatedAt:    time.Now(),
+	}
+
+	_, err = h.db.Exec(r.Context(),
+		`INSERT INTO admins (id, email, password_hash, created_at) VALUES ($1, $2, $3, $4)`,
+		admin.ID, admin.Email, admin.PasswordHash, admin.CreatedAt,
+	)
+	if err != nil {
+		writeError(w, http.StatusConflict, "email already registered")
+		return
+	}
+
+	token, err := h.generateToken(admin.ID.String())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to generate token")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, authResponse{Token: token, Admin: admin})
+}
+
+func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
+	var req loginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	var admin models.Admin
+	err := h.db.QueryRow(r.Context(),
+		`SELECT id, email, password_hash, created_at FROM admins WHERE email = $1`, req.Email,
+	).Scan(&admin.ID, &admin.Email, &admin.PasswordHash, &admin.CreatedAt)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid credentials")
+		return
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(admin.PasswordHash), []byte(req.Password)); err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid credentials")
+		return
+	}
+
+	token, err := h.generateToken(admin.ID.String())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to generate token")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, authResponse{Token: token, Admin: admin})
+}
+
+func (h *Handler) generateToken(adminID string) (string, error) {
+	claims := jwt.MapClaims{
+		"sub": adminID,
+		"exp": time.Now().Add(24 * time.Hour).Unix(),
+		"iat": time.Now().Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(h.config.JWTSecret))
+}

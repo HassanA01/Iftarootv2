@@ -1,0 +1,25 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gofmt
+    - goimports
+    - gosec
+    - bodyclose
+
+linters-settings:
+  gofmt:
+    simplify: true
+  goimports:
+    local-prefixes: github.com/HassanA01/Iftarootv2
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gosec
