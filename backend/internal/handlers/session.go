@@ -1,9 +1,10 @@
 package handlers
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
-	"math/rand"
+	"math/big"
 	"net/http"
 	"time"
 
@@ -25,10 +26,14 @@ func (h *Handler) CreateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	code := generateCode()
+	code, err := generateCode()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to generate session code")
+		return
+	}
 	sessionID := uuid.New()
 
-	_, err := h.db.Exec(r.Context(),
+	_, err = h.db.Exec(r.Context(),
 		`INSERT INTO game_sessions (id, quiz_id, code, status) VALUES ($1, $2, $3, $4)`,
 		sessionID, req.QuizID, code, models.GameStatusWaiting,
 	)
@@ -114,7 +119,10 @@ func (h *Handler) JoinSession(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func generateCode() string {
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	return fmt.Sprintf("%06d", r.Intn(1000000))
+func generateCode() (string, error) {
+	n, err := rand.Int(rand.Reader, big.NewInt(1_000_000))
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%06d", n.Int64()), nil
 }

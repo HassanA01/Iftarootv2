@@ -6,10 +6,11 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/HassanA01/Iftarootv2/backend/internal/models"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/HassanA01/Iftarootv2/backend/internal/models"
 )
 
 var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)

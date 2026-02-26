@@ -39,7 +39,6 @@ type Client struct {
 	SessionID string
 	IsHost    bool
 	Send      chan []byte
-	hub       *Hub
 }
 
 // Hub maintains active game rooms and broadcasts messages.

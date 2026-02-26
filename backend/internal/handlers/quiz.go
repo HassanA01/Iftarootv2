@@ -43,10 +43,10 @@ type createQuizRequest struct {
 }
 
 type questionInputItem struct {
-	Text      string             `json:"text"`
-	TimeLimit int                `json:"time_limit"`
-	Order     int                `json:"order"`
-	Options   []optionInputItem  `json:"options"`
+	Text      string            `json:"text"`
+	TimeLimit int               `json:"time_limit"`
+	Order     int               `json:"order"`
+	Options   []optionInputItem `json:"options"`
 }
 
 type optionInputItem struct {
@@ -79,7 +79,7 @@ func (h *Handler) CreateQuiz(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to start transaction")
 		return
 	}
-	defer tx.Rollback(r.Context())
+	defer func() { _ = tx.Rollback(r.Context()) }()
 
 	_, err = tx.Exec(r.Context(),
 		`INSERT INTO quizzes (id, admin_id, title) VALUES ($1, $2, $3)`,
