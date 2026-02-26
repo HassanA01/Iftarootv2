@@ -1,21 +1,24 @@
 package handlers
 
 import (
+	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"math/rand"
+	"math/big"
 	"net/http"
 	"time"
 
-	appMiddleware "github.com/HassanA01/Iftarootv2/backend/internal/middleware"
-	"github.com/HassanA01/Iftarootv2/backend/internal/models"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
+
+	appMiddleware "github.com/HassanA01/Iftarootv2/backend/internal/middleware"
+	"github.com/HassanA01/Iftarootv2/backend/internal/models"
 )
 
 func (h *Handler) CreateSession(w http.ResponseWriter, r *http.Request) {
 	adminID := appMiddleware.GetAdminID(r.Context())
-	_ = adminID
 
 	var req struct {
 		QuizID string `json:"quiz_id"`
@@ -24,11 +27,30 @@ func (h *Handler) CreateSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	if req.QuizID == "" {
+		writeError(w, http.StatusBadRequest, "quiz_id is required")
+		return
+	}
 
-	code := generateCode()
+	// Verify quiz exists and belongs to this admin
+	var exists bool
+	err := h.db.QueryRow(r.Context(),
+		`SELECT EXISTS(SELECT 1 FROM quizzes WHERE id = $1 AND admin_id = $2)`,
+		req.QuizID, adminID,
+	).Scan(&exists)
+	if err != nil || !exists {
+		writeError(w, http.StatusNotFound, "quiz not found")
+		return
+	}
+
+	code, err := generateCode()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to generate session code")
+		return
+	}
 	sessionID := uuid.New()
 
-	_, err := h.db.Exec(r.Context(),
+	_, err = h.db.Exec(r.Context(),
 		`INSERT INTO game_sessions (id, quiz_id, code, status) VALUES ($1, $2, $3, $4)`,
 		sessionID, req.QuizID, code, models.GameStatusWaiting,
 	)
@@ -102,7 +124,12 @@ func (h *Handler) JoinSession(w http.ResponseWriter, r *http.Request) {
 		playerID, session.ID, req.Name,
 	)
 	if err != nil {
-		writeError(w, http.StatusConflict, "name already taken in this game")
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			writeError(w, http.StatusConflict, "name already taken in this game")
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to join game")
+		}
 		return
 	}
 
@@ -114,7 +141,10 @@ func (h *Handler) JoinSession(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func generateCode() string {
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	return fmt.Sprintf("%06d", r.Intn(1000000))
+func generateCode() (string, error) {
+	n, err := rand.Int(rand.Reader, big.NewInt(1_000_000))
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%06d", n.Int64()), nil
 }

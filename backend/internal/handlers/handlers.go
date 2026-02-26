@@ -1,11 +1,12 @@
 package handlers
 
 import (
-	"github.com/HassanA01/Iftarootv2/backend/internal/config"
-	"github.com/HassanA01/Iftarootv2/backend/internal/hub"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
+
+	"github.com/HassanA01/Iftarootv2/backend/internal/config"
+	"github.com/HassanA01/Iftarootv2/backend/internal/hub"
 )
 
 type Handler struct {

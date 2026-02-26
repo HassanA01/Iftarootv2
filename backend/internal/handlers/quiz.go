@@ -4,10 +4,11 @@ import (
 	"encoding/json"
 	"net/http"
 
-	appMiddleware "github.com/HassanA01/Iftarootv2/backend/internal/middleware"
-	"github.com/HassanA01/Iftarootv2/backend/internal/models"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+
+	appMiddleware "github.com/HassanA01/Iftarootv2/backend/internal/middleware"
+	"github.com/HassanA01/Iftarootv2/backend/internal/models"
 )
 
 func (h *Handler) ListQuizzes(w http.ResponseWriter, r *http.Request) {
@@ -43,10 +44,10 @@ type createQuizRequest struct {
 }
 
 type questionInputItem struct {
-	Text      string             `json:"text"`
-	TimeLimit int                `json:"time_limit"`
-	Order     int                `json:"order"`
-	Options   []optionInputItem  `json:"options"`
+	Text      string            `json:"text"`
+	TimeLimit int               `json:"time_limit"`
+	Order     int               `json:"order"`
+	Options   []optionInputItem `json:"options"`
 }
 
 type optionInputItem struct {
@@ -79,7 +80,7 @@ func (h *Handler) CreateQuiz(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to start transaction")
 		return
 	}
-	defer tx.Rollback(r.Context())
+	defer func() { _ = tx.Rollback(r.Context()) }()
 
 	_, err = tx.Exec(r.Context(),
 		`INSERT INTO quizzes (id, admin_id, title) VALUES ($1, $2, $3)`,
@@ -122,10 +123,11 @@ func (h *Handler) CreateQuiz(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) GetQuiz(w http.ResponseWriter, r *http.Request) {
 	quizID := chi.URLParam(r, "quizID")
+	adminID := appMiddleware.GetAdminID(r.Context())
 
 	var quiz models.Quiz
 	err := h.db.QueryRow(r.Context(),
-		`SELECT id, admin_id, title, created_at FROM quizzes WHERE id = $1`, quizID,
+		`SELECT id, admin_id, title, created_at FROM quizzes WHERE id = $1 AND admin_id = $2`, quizID, adminID,
 	).Scan(&quiz.ID, &quiz.AdminID, &quiz.Title, &quiz.CreatedAt)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "quiz not found")
@@ -144,20 +146,35 @@ func (h *Handler) GetQuiz(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var q models.Question
 		if err := rows.Scan(&q.ID, &q.QuizID, &q.Text, &q.TimeLimit, &q.Order); err != nil {
-			continue
+			writeError(w, http.StatusInternalServerError, "failed to scan question")
+			return
 		}
 		optRows, err := h.db.Query(r.Context(),
 			`SELECT id, question_id, text, is_correct FROM options WHERE question_id = $1`, q.ID,
 		)
-		if err == nil {
-			for optRows.Next() {
-				var o models.Option
-				_ = optRows.Scan(&o.ID, &o.QuestionID, &o.Text, &o.IsCorrect)
-				q.Options = append(q.Options, o)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to load options")
+			return
+		}
+		for optRows.Next() {
+			var o models.Option
+			if err := optRows.Scan(&o.ID, &o.QuestionID, &o.Text, &o.IsCorrect); err != nil {
+				optRows.Close()
+				writeError(w, http.StatusInternalServerError, "failed to scan option")
+				return
 			}
-			optRows.Close()
+			q.Options = append(q.Options, o)
+		}
+		optRows.Close()
+		if err := optRows.Err(); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to read options")
+			return
 		}
 		quiz.Questions = append(quiz.Questions, q)
+	}
+	if err := rows.Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to read questions")
+		return
 	}
 
 	writeJSON(w, http.StatusOK, quiz)
@@ -170,9 +187,16 @@ func (h *Handler) UpdateQuiz(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) DeleteQuiz(w http.ResponseWriter, r *http.Request) {
 	quizID := chi.URLParam(r, "quizID")
-	_, err := h.db.Exec(r.Context(), `DELETE FROM quizzes WHERE id = $1`, quizID)
+	adminID := appMiddleware.GetAdminID(r.Context())
+	result, err := h.db.Exec(r.Context(),
+		`DELETE FROM quizzes WHERE id = $1 AND admin_id = $2`, quizID, adminID,
+	)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete quiz")
+		return
+	}
+	if result.RowsAffected() == 0 {
+		writeError(w, http.StatusNotFound, "quiz not found")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

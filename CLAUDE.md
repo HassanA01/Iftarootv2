@@ -55,6 +55,23 @@ docker compose exec frontend pnpm exec tsc --noEmit
 docker compose -f docker-compose.prod.yml build
 ```
 
+## Pre-Push Checklist (MUST run before every commit)
+
+Run all of these inside the containers — if any fail, fix before pushing:
+
+```bash
+# 1. Backend: build, test, lint
+docker compose exec backend go build ./...
+docker compose exec backend go test ./...
+docker compose exec backend golangci-lint run
+
+# 2. Frontend: type check, lint, test, build
+docker compose exec frontend pnpm exec tsc --noEmit
+docker compose exec frontend pnpm lint
+docker compose exec frontend pnpm test
+docker compose exec frontend pnpm build
+```
+
 ## Architecture Decisions
 
 - **WebSocket hub is in-process** (single Go process). Redis is used for game state persistence, not clustering — but the architecture supports sharding later via Redis pub/sub.

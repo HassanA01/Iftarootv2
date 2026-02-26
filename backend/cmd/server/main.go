@@ -9,14 +9,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/HassanA01/Iftarootv2/backend/internal/config"
-	"github.com/HassanA01/Iftarootv2/backend/internal/db"
-	"github.com/HassanA01/Iftarootv2/backend/internal/handlers"
-	"github.com/HassanA01/Iftarootv2/backend/internal/hub"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/joho/godotenv"
+
+	"github.com/HassanA01/Iftarootv2/backend/internal/config"
+	"github.com/HassanA01/Iftarootv2/backend/internal/db"
+	"github.com/HassanA01/Iftarootv2/backend/internal/handlers"
+	"github.com/HassanA01/Iftarootv2/backend/internal/hub"
 )
 
 func main() {
@@ -66,7 +67,7 @@ func main() {
 		Addr:         ":" + cfg.Port,
 		Handler:      r,
 		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		WriteTimeout: 0, // disabled: WebSocket connections manage their own write deadlines
 		IdleTimeout:  60 * time.Second,
 	}
 

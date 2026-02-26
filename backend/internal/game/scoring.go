@@ -3,9 +3,9 @@ package game
 import "math"
 
 const (
-	BasePoints    = 1000
-	MinPoints     = 0
-	StreakBonus   = 100
+	BasePoints  = 1000
+	MinPoints   = 0
+	StreakBonus = 100
 )
 
 // CalculatePoints returns points for a correct answer.

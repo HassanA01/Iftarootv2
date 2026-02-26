@@ -6,18 +6,21 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/HassanA01/Iftarootv2/backend/internal/hub"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+
+	"github.com/HassanA01/Iftarootv2/backend/internal/hub"
 )
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		return true // CORS is handled at the router level
-	},
+func newUpgrader(frontendURL string) *websocket.Upgrader {
+	return &websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin: func(r *http.Request) bool {
+			return r.Header.Get("Origin") == frontendURL
+		},
+	}
 }
 
 const (
@@ -30,7 +33,7 @@ const (
 func (h *Handler) HostWebSocket(w http.ResponseWriter, r *http.Request) {
 	sessionCode := chi.URLParam(r, "sessionCode")
 
-	conn, err := upgrader.Upgrade(w, r, nil)
+	conn, err := newUpgrader(h.config.FrontendURL).Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("ws upgrade error: %v", err)
 		return
@@ -57,7 +60,7 @@ func (h *Handler) PlayerWebSocket(w http.ResponseWriter, r *http.Request) {
 	playerID := r.URL.Query().Get("player_id")
 	playerName := r.URL.Query().Get("name")
 
-	conn, err := upgrader.Upgrade(w, r, nil)
+	conn, err := newUpgrader(h.config.FrontendURL).Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("ws upgrade error: %v", err)
 		return
