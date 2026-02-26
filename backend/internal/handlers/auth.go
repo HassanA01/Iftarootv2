@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/HassanA01/Iftarootv2/backend/internal/models"
@@ -10,6 +11,10 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
+
+var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
+
+const minPasswordLength = 8
 
 type registerRequest struct {
 	Email    string `json:"email"`
@@ -34,6 +39,14 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Email == "" || req.Password == "" {
 		writeError(w, http.StatusBadRequest, "email and password are required")
+		return
+	}
+	if !emailRegex.MatchString(req.Email) {
+		writeError(w, http.StatusBadRequest, "invalid email address")
+		return
+	}
+	if len(req.Password) < minPasswordLength {
+		writeError(w, http.StatusBadRequest, "password must be at least 8 characters")
 		return
 	}
 

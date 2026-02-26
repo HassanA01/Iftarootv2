@@ -8,11 +8,11 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": {
-        target: "http://backend:8080",
+        target: "http://backend:8081",
         changeOrigin: true,
       },
       "/ws": {
-        target: "ws://backend:8080",
+        target: "ws://backend:8081",
         ws: true,
       },
     },

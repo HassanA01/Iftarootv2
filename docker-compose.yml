@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-iftaroot}
       POSTGRES_DB: ${POSTGRES_DB:-iftaroot}
     ports:
-      - "5432:5432"
+      - "5434:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -22,7 +22,7 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
       - redisdata:/data
     healthcheck:
@@ -43,17 +43,17 @@ services:
       redis:
         condition: service_healthy
     environment:
-      PORT: "8080"
+      PORT: "8081"
       DATABASE_URL: "postgres://${POSTGRES_USER:-iftaroot}:${POSTGRES_PASSWORD:-iftaroot}@postgres:5432/${POSTGRES_DB:-iftaroot}?sslmode=disable"
       REDIS_URL: "redis://redis:6379"
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-prod}
       FRONTEND_URL: "http://localhost:5173"
     ports:
-      - "8080:8080"
+      - "8081:8081"
     volumes:
       - ./backend:/app
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -69,8 +69,8 @@ services:
       backend:
         condition: service_healthy
     environment:
-      VITE_API_BASE_URL: "http://localhost:8080/api/v1"
-      VITE_WS_BASE_URL: "ws://localhost:8080"
+      VITE_API_BASE_URL: "http://localhost:8081/api/v1"
+      VITE_WS_BASE_URL: "ws://localhost:8081"
     ports:
       - "5173:5173"
     volumes:
