@@ -2,12 +2,14 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"regexp"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/HassanA01/Iftarootv2/backend/internal/models"
@@ -69,7 +71,12 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		admin.ID, admin.Email, admin.PasswordHash, admin.CreatedAt,
 	)
 	if err != nil {
-		writeError(w, http.StatusConflict, "email already registered")
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			writeError(w, http.StatusConflict, "email already registered")
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to create admin")
+		}
 		return
 	}
 
@@ -86,6 +93,10 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Email == "" || req.Password == "" {
+		writeError(w, http.StatusBadRequest, "email and password are required")
 		return
 	}
 

@@ -3,6 +3,7 @@ package handlers
 import (
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	appMiddleware "github.com/HassanA01/Iftarootv2/backend/internal/middleware"
 	"github.com/HassanA01/Iftarootv2/backend/internal/models"
@@ -17,13 +19,27 @@ import (
 
 func (h *Handler) CreateSession(w http.ResponseWriter, r *http.Request) {
 	adminID := appMiddleware.GetAdminID(r.Context())
-	_ = adminID
 
 	var req struct {
 		QuizID string `json:"quiz_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.QuizID == "" {
+		writeError(w, http.StatusBadRequest, "quiz_id is required")
+		return
+	}
+
+	// Verify quiz exists and belongs to this admin
+	var exists bool
+	err := h.db.QueryRow(r.Context(),
+		`SELECT EXISTS(SELECT 1 FROM quizzes WHERE id = $1 AND admin_id = $2)`,
+		req.QuizID, adminID,
+	).Scan(&exists)
+	if err != nil || !exists {
+		writeError(w, http.StatusNotFound, "quiz not found")
 		return
 	}
 
@@ -108,7 +124,12 @@ func (h *Handler) JoinSession(w http.ResponseWriter, r *http.Request) {
 		playerID, session.ID, req.Name,
 	)
 	if err != nil {
-		writeError(w, http.StatusConflict, "name already taken in this game")
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			writeError(w, http.StatusConflict, "name already taken in this game")
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to join game")
+		}
 		return
 	}
 

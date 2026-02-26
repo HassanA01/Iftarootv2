@@ -67,7 +67,7 @@ func main() {
 		Addr:         ":" + cfg.Port,
 		Handler:      r,
 		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		WriteTimeout: 0, // disabled: WebSocket connections manage their own write deadlines
 		IdleTimeout:  60 * time.Second,
 	}
 
