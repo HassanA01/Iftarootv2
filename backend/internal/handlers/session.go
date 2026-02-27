@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"math/big"
 	"net/http"
 	"time"
@@ -201,6 +202,13 @@ func (h *Handler) StartSession(w http.ResponseWriter, r *http.Request) {
 		Type:    hub.MsgGameStarted,
 		Payload: map[string]string{"session_id": session.ID.String()},
 	})
+
+	// Kick off the game engine (loads questions, schedules first question in 3s).
+	go func() {
+		if err := h.engine.StartGame(r.Context(), session.Code, session.ID.String(), session.QuizID.String()); err != nil {
+			log.Printf("engine.StartGame error: %v", err)
+		}
+	}()
 
 	writeJSON(w, http.StatusOK, session)
 }

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 
+	"github.com/HassanA01/Iftarootv2/backend/internal/game"
 	"github.com/HassanA01/Iftarootv2/backend/internal/hub"
 )
 
@@ -50,6 +52,9 @@ func (h *Handler) HostWebSocket(w http.ResponseWriter, r *http.Request) {
 		h.hub.LeaveRoom(sessionCode, client)
 		conn.Close()
 	}()
+
+	// Send current game state if a game is already in progress.
+	go h.sendInitialState(r.Context(), sessionCode, client, true)
 
 	go writePump(conn, client)
 	readPump(conn, client, h, sessionCode, true)
@@ -94,6 +99,8 @@ func (h *Handler) PlayerWebSocket(w http.ResponseWriter, r *http.Request) {
 			"name":      playerName,
 		},
 	})
+
+	go h.sendInitialState(r.Context(), sessionCode, client, false)
 
 	go writePump(conn, client)
 	readPump(conn, client, h, sessionCode, false)
@@ -164,8 +171,7 @@ func writePump(conn *websocket.Conn, client *hub.Client) {
 }
 
 func handleMessage(h *Handler, client *hub.Client, sessionCode string, isHost bool, msg hub.Message) {
-	// Message routing: host and player actions handled here.
-	// Full game orchestration logic will be implemented in the game engine.
+	ctx := context.Background()
 	switch msg.Type {
 	case hub.MsgPing:
 		data, _ := json.Marshal(hub.Message{Type: hub.MsgPing, Payload: "pong"})
@@ -173,7 +179,65 @@ func handleMessage(h *Handler, client *hub.Client, sessionCode string, isHost bo
 		case client.Send <- data:
 		default:
 		}
+
+	case hub.MsgAnswerSubmitted:
+		if isHost {
+			return
+		}
+		payload, ok := msg.Payload.(map[string]any)
+		if !ok {
+			return
+		}
+		questionID, _ := payload["question_id"].(string)
+		optionID, _ := payload["option_id"].(string)
+		if questionID == "" || optionID == "" {
+			return
+		}
+		if err := h.engine.SubmitAnswer(ctx, sessionCode, client.ID, questionID, optionID); err != nil {
+			log.Printf("engine.SubmitAnswer error: %v", err)
+		}
+
+	case hub.MsgNextQuestion:
+		if !isHost {
+			return
+		}
+		if err := h.engine.NextQuestion(ctx, sessionCode); err != nil {
+			log.Printf("engine.NextQuestion error: %v", err)
+		}
+
 	default:
 		log.Printf("unhandled message type: %s from isHost=%v", msg.Type, isHost)
+	}
+}
+
+// sendInitialState sends the current game state to a newly connected client.
+func (h *Handler) sendInitialState(ctx context.Context, sessionCode string, client *hub.Client, isHost bool) {
+	// Small delay to ensure writePump goroutine is running.
+	time.Sleep(100 * time.Millisecond)
+
+	state, err := h.engine.GetCurrentState(ctx, sessionCode)
+	if err != nil {
+		return // no active game — lobby connection, nothing to send
+	}
+
+	var msg *hub.Message
+	switch state.Phase {
+	case game.PhaseQuestion:
+		if isHost {
+			msg, _ = h.engine.GetHostQuestion(ctx, sessionCode)
+		} else {
+			msg, _ = h.engine.GetCurrentQuestion(ctx, sessionCode)
+		}
+	}
+
+	if msg != nil {
+		data, err := json.Marshal(msg)
+		if err != nil {
+			return
+		}
+		select {
+		case client.Send <- data:
+		default:
+		}
 	}
 }
