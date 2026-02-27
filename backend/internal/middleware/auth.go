@@ -47,3 +47,8 @@ func GetAdminID(ctx context.Context) string {
 	v, _ := ctx.Value(AdminIDKey).(string)
 	return v
 }
+
+// ContextWithAdminID injects an admin ID into a context. Used in tests.
+func ContextWithAdminID(ctx context.Context, adminID string) context.Context {
+	return context.WithValue(ctx, AdminIDKey, adminID)
+}

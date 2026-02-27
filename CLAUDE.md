@@ -36,20 +36,8 @@ frontend/src/components/          — reusable UI components
 # Start full dev environment
 docker compose up --build
 
-# Backend tests
-docker compose exec backend go test ./...
-
-# Backend linter
-docker compose exec backend golangci-lint run
-
-# Frontend tests
-docker compose exec frontend pnpm test
-
-# Frontend lint
-docker compose exec frontend pnpm lint
-
-# Frontend type check
-docker compose exec frontend pnpm exec tsc --noEmit
+# Run ALL checks (backend + frontend) — use this before every commit/PR
+./scripts/check.sh
 
 # Build for production
 docker compose -f docker-compose.prod.yml build
@@ -57,20 +45,11 @@ docker compose -f docker-compose.prod.yml build
 
 ## Pre-Push Checklist (MUST run before every commit)
 
-Run all of these inside the containers — if any fail, fix before pushing:
-
 ```bash
-# 1. Backend: build, test, lint
-docker compose exec backend go build ./...
-docker compose exec backend go test ./...
-docker compose exec backend golangci-lint run
-
-# 2. Frontend: type check, lint, test, build
-docker compose exec frontend pnpm exec tsc --noEmit
-docker compose exec frontend pnpm lint
-docker compose exec frontend pnpm test
-docker compose exec frontend pnpm build
+./scripts/check.sh
 ```
+
+This single script runs: backend build → backend test → backend lint → frontend typecheck → frontend lint → frontend test → frontend build. All inside Docker. Exit 0 = all green.
 
 ## Architecture Decisions
 
