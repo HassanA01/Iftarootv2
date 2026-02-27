@@ -181,8 +181,72 @@ func (h *Handler) GetQuiz(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) UpdateQuiz(w http.ResponseWriter, r *http.Request) {
-	// TODO: implement full quiz update
-	writeJSON(w, http.StatusOK, map[string]string{"status": "not yet implemented"})
+	quizID := chi.URLParam(r, "quizID")
+	adminID := appMiddleware.GetAdminID(r.Context())
+
+	var req createQuizRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Title == "" {
+		writeError(w, http.StatusBadRequest, "title is required")
+		return
+	}
+
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to start transaction")
+		return
+	}
+	defer func() { _ = tx.Rollback(r.Context()) }()
+
+	// Verify ownership and update title atomically
+	result, err := tx.Exec(r.Context(),
+		`UPDATE quizzes SET title = $1 WHERE id = $2 AND admin_id = $3`,
+		req.Title, quizID, adminID,
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update quiz")
+		return
+	}
+	if result.RowsAffected() == 0 {
+		writeError(w, http.StatusNotFound, "quiz not found")
+		return
+	}
+
+	// Replace all questions and options (delete cascade handles options)
+	if _, err = tx.Exec(r.Context(), `DELETE FROM questions WHERE quiz_id = $1`, quizID); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update questions")
+		return
+	}
+
+	for _, qi := range req.Questions {
+		qID := uuid.New()
+		if _, err = tx.Exec(r.Context(),
+			`INSERT INTO questions (id, quiz_id, text, time_limit, "order") VALUES ($1, $2, $3, $4, $5)`,
+			qID, quizID, qi.Text, qi.TimeLimit, qi.Order,
+		); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update question")
+			return
+		}
+		for _, oi := range qi.Options {
+			if _, err = tx.Exec(r.Context(),
+				`INSERT INTO options (id, question_id, text, is_correct) VALUES ($1, $2, $3, $4)`,
+				uuid.New(), qID, oi.Text, oi.IsCorrect,
+			); err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to update option")
+				return
+			}
+		}
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to commit transaction")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"id": quizID, "title": req.Title})
 }
 
 func (h *Handler) DeleteQuiz(w http.ResponseWriter, r *http.Request) {

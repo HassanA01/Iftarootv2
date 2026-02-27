@@ -5,6 +5,8 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 import { LoginPage } from "./pages/LoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { AdminDashboardPage } from "./pages/AdminDashboardPage";
+import { QuizListPage } from "./pages/QuizListPage";
+import { QuizFormPage } from "./pages/QuizFormPage";
 
 const NotFound = () => (
   <div className="min-h-screen bg-gray-950 flex items-center justify-center">
@@ -32,7 +34,12 @@ function App() {
                 <AdminDashboardPage />
               </ProtectedRoute>
             }
-          />
+          >
+            <Route index element={<QuizListPage />} />
+            <Route path="quizzes" element={<QuizListPage />} />
+            <Route path="quizzes/new" element={<QuizFormPage />} />
+            <Route path="quizzes/:quizID/edit" element={<QuizFormPage />} />
+          </Route>
 
           {/* Default redirect */}
           <Route path="/" element={<Navigate to="/admin" replace />} />
