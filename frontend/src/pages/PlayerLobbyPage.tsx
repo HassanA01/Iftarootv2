@@ -1,5 +1,7 @@
-import { useEffect, useState, useCallback } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { getSessionByCode, listSessionPlayers } from "../api/sessions";
 import { useWebSocket } from "../hooks/useWebSocket";
 import type { WsMessage } from "../types";
 
@@ -10,6 +12,12 @@ interface PlayerInfo {
   name: string;
 }
 
+interface WsPlayerEvent {
+  type: "joined" | "left";
+  player_id: string;
+  name: string;
+}
+
 export function PlayerLobbyPage() {
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
@@ -17,31 +25,65 @@ export function PlayerLobbyPage() {
   const playerId = sessionStorage.getItem("player_id") ?? "";
   const playerName = sessionStorage.getItem("player_name") ?? "";
 
-  const [players, setPlayers] = useState<PlayerInfo[]>([]);
   const [wsReady, setWsReady] = useState(false);
   const [disconnected, setDisconnected] = useState(false);
+  const [wsEvents, setWsEvents] = useState<WsPlayerEvent[]>([]);
 
-  // Redirect if no identity (e.g. page refresh)
-  useEffect(() => {
-    if (!playerId || !playerName) {
-      navigate(`/join?code=${code}`, { replace: true });
-    }
-  }, [playerId, playerName, code, navigate]);
+  // Validate session exists
+  const {
+    data: session,
+    isLoading: sessionLoading,
+    isError: sessionError,
+  } = useQuery({
+    queryKey: ["session-by-code", code],
+    queryFn: () => getSessionByCode(code!),
+    enabled: !!code,
+    retry: false,
+  });
 
-  const handleMessage = useCallback((msg: WsMessage) => {
-    if (msg.type === "player_joined") {
-      const payload = msg.payload as { player_id: string; name: string };
-      setPlayers((prev) => {
-        if (prev.some((p) => p.id === payload.player_id)) return prev;
-        return [...prev, { id: payload.player_id, name: payload.name }];
-      });
-    } else if (msg.type === "player_left") {
-      const payload = msg.payload as { player_id: string };
-      setPlayers((prev) => prev.filter((p) => p.id !== payload.player_id));
-    } else if (msg.type === "game_started") {
-      navigate(`/game/${code}/play`);
+  // Fetch initial player list once session is known
+  const { data: initialPlayers } = useQuery({
+    queryKey: ["session-players", session?.id],
+    queryFn: () => listSessionPlayers(session!.id),
+    enabled: !!session?.id,
+  });
+
+  // Derive player list: initial DB snapshot + WS deltas (deduplicated)
+  const players: PlayerInfo[] = useMemo(() => {
+    let result: PlayerInfo[] = (initialPlayers ?? []).map((p) => ({
+      id: p.id,
+      name: p.name,
+    }));
+    for (const ev of wsEvents) {
+      if (ev.type === "joined" && !result.some((p) => p.id === ev.player_id)) {
+        result.push({ id: ev.player_id, name: ev.name });
+      } else if (ev.type === "left") {
+        result = result.filter((p) => p.id !== ev.player_id);
+      }
     }
-  }, [code, navigate]);
+    return result;
+  }, [initialPlayers, wsEvents]);
+
+  const handleMessage = useCallback(
+    (msg: WsMessage) => {
+      if (msg.type === "player_joined") {
+        const payload = msg.payload as { player_id: string; name: string };
+        setWsEvents((prev) => [
+          ...prev,
+          { type: "joined", player_id: payload.player_id, name: payload.name },
+        ]);
+      } else if (msg.type === "player_left") {
+        const payload = msg.payload as { player_id: string };
+        setWsEvents((prev) => [
+          ...prev,
+          { type: "left", player_id: payload.player_id, name: "" },
+        ]);
+      } else if (msg.type === "game_started") {
+        navigate(`/game/${code}/play`);
+      }
+    },
+    [code, navigate],
+  );
 
   const wsUrl = `${WS_BASE}/api/v1/ws/player/${code}?player_id=${playerId}&name=${encodeURIComponent(playerName)}`;
 
@@ -56,16 +98,61 @@ export function PlayerLobbyPage() {
       setWsReady(false);
       setDisconnected(true);
     },
-    enabled: !!playerId && !!code,
+    // Only connect once session is confirmed valid and player identity exists
+    enabled: !!session && !!playerId && !!code,
   });
+
+  // --- Loading ---
+  if (sessionLoading) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+        <p className="text-gray-400">Looking up game…</p>
+      </div>
+    );
+  }
+
+  // --- Invalid / not found ---
+  if (sessionError || !session) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4">
+        <div className="text-center space-y-4">
+          <h1 className="text-3xl font-bold text-white">Game not found</h1>
+          <p className="text-gray-400">
+            The code <span className="font-mono text-indigo-400">{code}</span> doesn't match any
+            active game.
+          </p>
+          <a href="/join" className="inline-block text-indigo-400 hover:text-indigo-300 text-sm">
+            ← Try a different code
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  // --- No player identity (e.g. direct URL access without joining first) ---
+  if (!playerId || !playerName) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4">
+        <div className="text-center space-y-4">
+          <h1 className="text-2xl font-bold text-white">Enter your name to join</h1>
+          <a
+            href={`/join?code=${code}`}
+            className="inline-block bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-6 py-3 rounded-lg transition"
+          >
+            Join Game
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-950 text-white flex flex-col items-center justify-center px-4">
       <div className="w-full max-w-sm space-y-8 text-center">
-        {/* Status */}
+        {/* Player identity */}
         <div>
           <div className="w-16 h-16 rounded-full bg-indigo-600 flex items-center justify-center text-2xl font-black mx-auto mb-4">
-            {playerName ? playerName[0].toUpperCase() : "?"}
+            {playerName[0].toUpperCase()}
           </div>
           <h1 className="text-2xl font-bold">{playerName}</h1>
           <p className="text-gray-400 text-sm mt-1">Room {code}</p>
@@ -75,11 +162,13 @@ export function PlayerLobbyPage() {
           <div className="bg-red-900/30 border border-red-700 rounded-xl p-4">
             <p className="text-red-400 text-sm">Disconnected. Reconnecting…</p>
           </div>
-        ) : wsReady ? (
+        ) : (
           <div className="bg-gray-900 rounded-xl p-6">
             <div className="flex items-center justify-center gap-2 mb-4">
               <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-              <p className="text-gray-300 font-medium">Waiting for host to start…</p>
+              <p className="text-gray-300 font-medium">
+                {wsReady ? "Waiting for host to start…" : "Connecting…"}
+              </p>
             </div>
 
             {players.length > 0 && (
@@ -102,10 +191,6 @@ export function PlayerLobbyPage() {
                 </ul>
               </div>
             )}
-          </div>
-        ) : (
-          <div className="bg-gray-900 rounded-xl p-6">
-            <p className="text-gray-400 text-sm">Connecting…</p>
           </div>
         )}
       </div>
