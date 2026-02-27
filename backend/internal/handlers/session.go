@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -203,9 +204,10 @@ func (h *Handler) StartSession(w http.ResponseWriter, r *http.Request) {
 		Payload: map[string]string{"session_id": session.ID.String()},
 	})
 
-	// Kick off the game engine (loads questions, schedules first question in 3s).
+	// Kick off the game engine in a goroutine with a background context.
+	// r.Context() is cancelled when the HTTP response is sent, so we must not use it here.
 	go func() {
-		if err := h.engine.StartGame(r.Context(), session.Code, session.ID.String(), session.QuizID.String()); err != nil {
+		if err := h.engine.StartGame(context.Background(), session.Code, session.ID.String(), session.QuizID.String()); err != nil {
 			log.Printf("engine.StartGame error: %v", err)
 		}
 	}()
