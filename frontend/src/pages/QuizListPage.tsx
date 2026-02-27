@@ -1,9 +1,11 @@
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { listQuizzes, deleteQuiz } from "../api/quizzes";
+import { createSession } from "../api/sessions";
 
 export function QuizListPage() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const { data: quizzes = [], isLoading, isError } = useQuery({
     queryKey: ["quizzes"],
@@ -13,6 +15,11 @@ export function QuizListPage() {
   const deleteMutation = useMutation({
     mutationFn: deleteQuiz,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["quizzes"] }),
+  });
+
+  const hostMutation = useMutation({
+    mutationFn: createSession,
+    onSuccess: (data) => navigate(`/admin/host/${data.code}`),
   });
 
   function handleDelete(id: string, title: string) {
@@ -60,6 +67,13 @@ export function QuizListPage() {
                 </p>
               </div>
               <div className="flex items-center gap-3">
+                <button
+                  onClick={() => hostMutation.mutate(quiz.id)}
+                  disabled={hostMutation.isPending}
+                  className="text-sm text-green-400 hover:text-green-300 disabled:opacity-50 font-semibold transition"
+                >
+                  Host
+                </button>
                 <Link
                   to={`/admin/quizzes/${quiz.id}/edit`}
                   className="text-sm text-indigo-400 hover:text-indigo-300 transition"

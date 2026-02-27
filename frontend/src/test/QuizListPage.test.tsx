@@ -6,6 +6,7 @@ import { QuizListPage } from "../pages/QuizListPage";
 import * as quizzesApi from "../api/quizzes";
 
 vi.mock("../api/quizzes");
+vi.mock("../api/sessions", () => ({ createSession: vi.fn() }));
 
 function renderList() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });

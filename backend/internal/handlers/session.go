@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/HassanA01/Iftarootv2/backend/internal/hub"
 	appMiddleware "github.com/HassanA01/Iftarootv2/backend/internal/middleware"
 	"github.com/HassanA01/Iftarootv2/backend/internal/models"
 )
@@ -139,6 +140,69 @@ func (h *Handler) JoinSession(w http.ResponseWriter, r *http.Request) {
 		"code":       session.Code,
 		"name":       req.Name,
 	})
+}
+
+func (h *Handler) GetSessionByCode(w http.ResponseWriter, r *http.Request) {
+	code := chi.URLParam(r, "code")
+	var session models.GameSession
+	err := h.db.QueryRow(r.Context(),
+		`SELECT id, quiz_id, code, status, started_at, ended_at, created_at FROM game_sessions WHERE code = $1`,
+		code,
+	).Scan(&session.ID, &session.QuizID, &session.Code, &session.Status,
+		&session.StartedAt, &session.EndedAt, &session.CreatedAt)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "session not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, session)
+}
+
+func (h *Handler) ListSessionPlayers(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "sessionID")
+	rows, err := h.db.Query(r.Context(),
+		`SELECT id, session_id, name, score, joined_at FROM game_players WHERE session_id = $1 ORDER BY joined_at ASC`,
+		sessionID,
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list players")
+		return
+	}
+	defer rows.Close()
+
+	players := make([]models.GamePlayer, 0)
+	for rows.Next() {
+		var p models.GamePlayer
+		if err := rows.Scan(&p.ID, &p.SessionID, &p.Name, &p.Score, &p.JoinedAt); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to read players")
+			return
+		}
+		players = append(players, p)
+	}
+	writeJSON(w, http.StatusOK, players)
+}
+
+func (h *Handler) StartSession(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "sessionID")
+	now := time.Now()
+
+	var session models.GameSession
+	err := h.db.QueryRow(r.Context(),
+		`UPDATE game_sessions SET status = $1, started_at = $2 WHERE id = $3 AND status = $4
+		 RETURNING id, quiz_id, code, status, started_at, ended_at, created_at`,
+		models.GameStatusActive, now, sessionID, models.GameStatusWaiting,
+	).Scan(&session.ID, &session.QuizID, &session.Code, &session.Status,
+		&session.StartedAt, &session.EndedAt, &session.CreatedAt)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "session not found or already started")
+		return
+	}
+
+	h.hub.Broadcast(session.Code, hub.Message{
+		Type:    hub.MsgGameStarted,
+		Payload: map[string]string{"session_id": session.ID.String()},
+	})
+
+	writeJSON(w, http.StatusOK, session)
 }
 
 func generateCode() (string, error) {
