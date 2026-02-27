@@ -7,6 +7,9 @@ import { RegisterPage } from "./pages/RegisterPage";
 import { AdminDashboardPage } from "./pages/AdminDashboardPage";
 import { QuizListPage } from "./pages/QuizListPage";
 import { QuizFormPage } from "./pages/QuizFormPage";
+import { HostLobbyPage } from "./pages/HostLobbyPage";
+import { JoinPage } from "./pages/JoinPage";
+import { PlayerLobbyPage } from "./pages/PlayerLobbyPage";
 
 const NotFound = () => (
   <div className="min-h-screen bg-gray-950 flex items-center justify-center">
@@ -39,7 +42,12 @@ function App() {
             <Route path="quizzes" element={<QuizListPage />} />
             <Route path="quizzes/new" element={<QuizFormPage />} />
             <Route path="quizzes/:quizID/edit" element={<QuizFormPage />} />
+            <Route path="host/:code" element={<HostLobbyPage />} />
           </Route>
+
+          {/* Player-facing public routes */}
+          <Route path="/join" element={<JoinPage />} />
+          <Route path="/game/:code" element={<PlayerLobbyPage />} />
 
           {/* Default redirect */}
           <Route path="/" element={<Navigate to="/admin" replace />} />

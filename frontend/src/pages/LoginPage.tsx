@@ -13,7 +13,10 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const from = (location.state as { from?: { pathname: string } })?.from?.pathname ?? "/admin";
+  const rawFrom = (location.state as { from?: { pathname: string } })?.from?.pathname ?? "/admin";
+  // Don't restore transient game/lobby pages after login — always go to dashboard
+  const from =
+    rawFrom.startsWith("/admin/host/") || rawFrom.startsWith("/game/") ? "/admin" : rawFrom;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();

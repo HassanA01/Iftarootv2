@@ -19,10 +19,19 @@ export function useWebSocket({
   enabled = true,
 }: UseWebSocketOptions) {
   const wsRef = useRef<WebSocket | null>(null);
+
+  // Keep all callbacks in refs so they never appear in the effect deps.
+  // The effect only re-runs when url or enabled changes.
   const onMessageRef = useRef(onMessage);
+  const onOpenRef = useRef(onOpen);
+  const onCloseRef = useRef(onClose);
+  const onErrorRef = useRef(onError);
 
   useEffect(() => {
     onMessageRef.current = onMessage;
+    onOpenRef.current = onOpen;
+    onCloseRef.current = onClose;
+    onErrorRef.current = onError;
   });
 
   const send = useCallback((msg: WsMessage) => {
@@ -37,9 +46,9 @@ export function useWebSocket({
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
-    ws.onopen = () => onOpen?.();
-    ws.onclose = () => onClose?.();
-    ws.onerror = (e) => onError?.(e);
+    ws.onopen = () => onOpenRef.current?.();
+    ws.onclose = () => onCloseRef.current?.();
+    ws.onerror = (e) => onErrorRef.current?.(e);
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data) as WsMessage;
@@ -52,7 +61,7 @@ export function useWebSocket({
     return () => {
       ws.close();
     };
-  }, [url, enabled, onOpen, onClose, onError]);
+  }, [url, enabled]); // callbacks intentionally excluded — they live in refs
 
   return { send };
 }
