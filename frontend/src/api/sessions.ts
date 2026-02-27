@@ -28,6 +28,10 @@ export async function startSession(sessionId: string): Promise<GameSession> {
   return data;
 }
 
+export async function endSession(sessionId: string): Promise<void> {
+  await apiClient.delete(`/sessions/${sessionId}`);
+}
+
 export interface JoinSessionResponse {
   player_id: string;
   session_id: string;

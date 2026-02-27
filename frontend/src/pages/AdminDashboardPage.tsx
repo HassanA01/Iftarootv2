@@ -1,13 +1,30 @@
-import { Outlet, useNavigate, NavLink } from "react-router-dom";
+import { Outlet, useNavigate, NavLink, useMatch } from "react-router-dom";
 import { useAuthStore } from "../stores/authStore";
+import { useGameStore } from "../stores/gameStore";
+import { endSession } from "../api/sessions";
 
 export function AdminDashboardPage() {
   const navigate = useNavigate();
   const { admin, clearAuth } = useAuthStore();
+  const { activeSession, clearActiveSession } = useGameStore();
+
+  // Detect if the admin is currently on a live game page.
+  const gameMatch = useMatch("/admin/game/:code");
+  const isHostingGame = !!gameMatch;
 
   function handleLogout() {
     clearAuth();
     navigate("/login", { replace: true });
+  }
+
+  async function handleEndGame() {
+    if (!activeSession) return;
+    try {
+      await endSession(activeSession.sessionId);
+    } finally {
+      clearActiveSession();
+      navigate("/admin", { replace: true });
+    }
   }
 
   return (
@@ -28,12 +45,21 @@ export function AdminDashboardPage() {
         </div>
         <div className="flex items-center gap-4">
           <span className="text-sm text-gray-400">{admin?.email}</span>
-          <button
-            onClick={handleLogout}
-            className="text-sm text-gray-400 hover:text-white transition"
-          >
-            Sign out
-          </button>
+          {isHostingGame ? (
+            <button
+              onClick={handleEndGame}
+              className="text-sm text-red-400 hover:text-red-300 font-medium transition"
+            >
+              End Game
+            </button>
+          ) : (
+            <button
+              onClick={handleLogout}
+              className="text-sm text-gray-400 hover:text-white transition"
+            >
+              Sign out
+            </button>
+          )}
         </div>
       </header>
 

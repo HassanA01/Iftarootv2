@@ -457,6 +457,29 @@ func (e *Engine) triggerGameOver(ctx context.Context, sessionCode string) error 
 	return nil
 }
 
+// EndGame forcefully ends the game (e.g. host ended session early).
+// Broadcasts game_over with reason="session_ended" and cleans up Redis.
+func (e *Engine) EndGame(ctx context.Context, sessionCode string) {
+	e.cancelTimer(sessionCode)
+
+	e.hub.Broadcast(sessionCode, hub.Message{
+		Type: hub.MsgGameOver,
+		Payload: map[string]any{
+			"reason": "session_ended",
+		},
+	})
+
+	// Clean up Redis keys.
+	state, err := e.loadState(ctx, sessionCode)
+	if err == nil {
+		for i := 0; i < state.TotalQuestions; i++ {
+			e.redis.Del(ctx, redisKeyAnswers(sessionCode, i))
+		}
+	}
+	e.redis.Del(ctx, redisKeyState(sessionCode))
+	e.redis.Del(ctx, redisKeyQuestions(sessionCode))
+}
+
 // cancelTimer cancels the active question timer for a session.
 func (e *Engine) cancelTimer(sessionCode string) {
 	e.mu.Lock()

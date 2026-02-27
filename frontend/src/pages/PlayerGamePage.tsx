@@ -24,7 +24,7 @@ interface AnswerRevealPayload {
   scores: Record<string, RevealScore>;
 }
 
-type GamePhase = "waiting" | "question" | "reveal" | "leaderboard" | "podium";
+type GamePhase = "waiting" | "question" | "reveal" | "leaderboard" | "podium" | "ended";
 
 function CountdownRing({
   timeLimit,
@@ -125,6 +125,13 @@ export function PlayerGamePage() {
             setPhase("podium");
             break;
           }
+          case "game_over": {
+            const p = msg.payload as { reason?: string };
+            if (p.reason === "session_ended") {
+              setPhase("ended");
+            }
+            break;
+          }
         }
       },
       [],
@@ -140,6 +147,25 @@ export function PlayerGamePage() {
       payload: { question_id: questionId, option_id: optionId },
     });
   };
+
+  // Host ended the game early
+  if (phase === "ended") {
+    return (
+      <div className="min-h-screen bg-gray-950 text-white flex items-center justify-center px-4">
+        <div className="text-center space-y-4">
+          <div className="text-4xl">🚫</div>
+          <h1 className="text-2xl font-bold">Game Ended</h1>
+          <p className="text-gray-400">The host ended the session early.</p>
+          <a
+            href="/join"
+            className="inline-block mt-4 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-6 py-3 rounded-lg transition"
+          >
+            Join another game
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   // Waiting screen
   if (phase === "waiting") {

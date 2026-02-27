@@ -1,6 +1,7 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useWebSocket } from "../hooks/useWebSocket";
+import { useGameStore } from "../stores/gameStore";
 import type { WsMessage, LeaderboardEntry, PodiumEntry } from "../types";
 
 const WS_BASE = import.meta.env.VITE_WS_BASE_URL ?? "ws://localhost:8081";
@@ -42,6 +43,16 @@ const OPTION_SHAPES = ["▲", "◆", "●", "■"];
 export function HostGamePage() {
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
+  const clearActiveSession = useGameStore((s) => s.clearActiveSession);
+
+  // Warn host before closing the tab mid-game.
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, []);
 
   const [phase, setPhase] = useState<GamePhase>("waiting");
   const [currentQuestion, setCurrentQuestion] = useState<HostQuestionPayload | null>(null);
@@ -85,10 +96,11 @@ export function HostGamePage() {
           const p = msg.payload as { entries: PodiumEntry[] };
           setPodium(p.entries);
           setPhase("podium");
+          clearActiveSession();
           break;
         }
       }
-    }, []),
+    }, [clearActiveSession]),
     enabled: !!code,
   });
 

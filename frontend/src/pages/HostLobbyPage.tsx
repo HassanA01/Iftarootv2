@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { getSessionByCode, listSessionPlayers, startSession } from "../api/sessions";
 import { useWebSocket } from "../hooks/useWebSocket";
+import { useGameStore } from "../stores/gameStore";
 import type { WsMessage, GamePlayer } from "../types";
 
 const WS_BASE = import.meta.env.VITE_WS_BASE_URL ?? "ws://localhost:8081";
@@ -76,8 +77,13 @@ export function HostLobbyPage() {
     enabled: !!code && !!session,
   });
 
+  const setActiveSession = useGameStore((s) => s.setActiveSession);
+
   const startMutation = useMutation({
     mutationFn: () => startSession(session!.id),
+    onSuccess: () => {
+      setActiveSession({ sessionId: session!.id, code: code! });
+    },
   });
 
   const joinUrl = `${window.location.origin}/join?code=${code}`;
