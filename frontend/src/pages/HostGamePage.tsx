@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { useGameStore } from "../stores/gameStore";
+import { LeaderboardDisplay } from "../components/LeaderboardDisplay";
 import type { WsMessage, LeaderboardEntry, PodiumEntry } from "../types";
 
 const WS_BASE = import.meta.env.VITE_WS_BASE_URL ?? "ws://localhost:8081";
@@ -165,40 +166,24 @@ export function HostGamePage() {
 
   // Leaderboard
   if (phase === "leaderboard") {
+    const isLastQuestion =
+      !currentQuestion ||
+      currentQuestion.question_index + 1 >= currentQuestion.total_questions;
     return (
       <div className="min-h-screen bg-gray-950 text-white flex flex-col items-center justify-center px-4">
         <div className="w-full max-w-lg space-y-6">
           <h2 className="text-2xl font-bold text-center">Leaderboard</h2>
-          <div className="space-y-2">
-            {leaderboard.slice(0, 5).map((entry, i) => (
-              <div
-                key={entry.player_id}
-                className="bg-gray-900 rounded-xl px-5 py-3 flex items-center justify-between"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-gray-500 w-6 text-center font-bold">#{i + 1}</span>
-                  <span className="font-medium">{entry.name}</span>
-                </div>
-                <span className="text-indigo-400 font-bold">{entry.score}</span>
-              </div>
-            ))}
-          </div>
-          {currentQuestion &&
-            currentQuestion.question_index + 1 < currentQuestion.total_questions ? (
-            <button
-              onClick={handleNextQuestion}
-              className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-4 rounded-xl transition"
-            >
-              Next Question →
-            </button>
-          ) : (
-            <button
-              onClick={handleNextQuestion}
-              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-4 rounded-xl transition"
-            >
-              Show Final Results
-            </button>
-          )}
+          <LeaderboardDisplay entries={leaderboard} />
+          <button
+            onClick={handleNextQuestion}
+            className={`w-full text-white font-bold py-4 rounded-xl transition ${
+              isLastQuestion
+                ? "bg-indigo-600 hover:bg-indigo-500"
+                : "bg-green-600 hover:bg-green-500"
+            }`}
+          >
+            {isLastQuestion ? "Show Final Results" : "Next Question →"}
+          </button>
         </div>
       </div>
     );
