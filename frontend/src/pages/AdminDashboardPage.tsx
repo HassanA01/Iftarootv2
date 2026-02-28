@@ -45,7 +45,7 @@ export function AdminDashboardPage() {
         </div>
         <div className="flex items-center gap-4">
           <span className="text-sm text-gray-400">{admin?.email}</span>
-          {isHostingGame ? (
+          {isHostingGame && activeSession ? (
             <button
               onClick={handleEndGame}
               className="text-sm text-red-400 hover:text-red-300 font-medium transition"

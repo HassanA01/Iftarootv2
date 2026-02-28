@@ -134,5 +134,7 @@ describe("HostGamePage", () => {
     expect(screen.getByText(/game over/i)).toBeInTheDocument();
     expect(screen.getByText("Alice")).toBeInTheDocument();
     expect(screen.getByText("2400")).toBeInTheDocument();
+    // Back to Dashboard is the only action button on the podium screen.
+    expect(screen.getByRole("button", { name: /back to dashboard/i })).toBeInTheDocument();
   });
 });
