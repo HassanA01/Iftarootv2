@@ -19,6 +19,14 @@ primary_region = "iad"
   auto_start_machines = true
   min_machines_running = 0
 
+[[http_service.checks]]
+  grace_period = "10s"
+  interval = "15s"
+  method = "GET"
+  path = "/health"
+  protocol = "http"
+  timeout = "5s"
+
 [[vm]]
   memory = "256mb"
   cpu_kind = "shared"
