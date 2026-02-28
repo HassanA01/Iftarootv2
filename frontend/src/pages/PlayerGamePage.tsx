@@ -213,6 +213,12 @@ export function PlayerGamePage() {
               </div>
             ))}
           </div>
+          <p className="text-gray-500 text-sm">
+            Want to play again?{" "}
+            <a href="/join" className="text-indigo-400 hover:text-indigo-300 transition">
+              Join a new game
+            </a>
+          </p>
         </div>
       </div>
     );

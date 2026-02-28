@@ -119,6 +119,44 @@ func (h *Hub) BroadcastToPlayer(roomCode, clientID string, msg Message) {
 	}
 }
 
+// BroadcastToHost sends a message only to the host of a room.
+func (h *Hub) BroadcastToHost(roomCode string, msg Message) {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("broadcast marshal error: %v", err)
+		return
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for client := range h.rooms[roomCode] {
+		if client.IsHost {
+			select {
+			case client.Send <- data:
+			default:
+			}
+		}
+	}
+}
+
+// BroadcastToPlayers sends a message to all non-host clients in a room.
+func (h *Hub) BroadcastToPlayers(roomCode string, msg Message) {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("broadcast marshal error: %v", err)
+		return
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for client := range h.rooms[roomCode] {
+		if !client.IsHost {
+			select {
+			case client.Send <- data:
+			default:
+			}
+		}
+	}
+}
+
 // RoomPlayerCount returns the number of non-host clients in a room.
 func (h *Hub) RoomPlayerCount(roomCode string) int {
 	h.mu.RLock()

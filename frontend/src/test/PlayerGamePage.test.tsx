@@ -156,4 +156,19 @@ describe("PlayerGamePage", () => {
     expect(screen.getAllByText("2700").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/your final score/i)).toBeInTheDocument();
   });
+
+  it("shows play again link on podium screen", () => {
+    renderPlayerGame();
+    act(() =>
+      capturedOnMessage!({
+        type: "podium",
+        payload: {
+          entries: [{ player_id: PLAYER_ID, name: "Alice", score: 2700, rank: 1 }],
+        },
+      }),
+    );
+    const link = screen.getByRole("link", { name: /join a new game/i });
+    expect(link).toBeInTheDocument();
+    expect(link).toHaveAttribute("href", "/join");
+  });
 });

@@ -253,9 +253,14 @@ func (e *Engine) broadcastQuestion(ctx context.Context, sessionCode string, idx 
 		return err
 	}
 
-	e.hub.Broadcast(sessionCode, hub.Message{
+	// Players receive the question without is_correct; host receives it with is_correct.
+	e.hub.BroadcastToPlayers(sessionCode, hub.Message{
 		Type:    hub.MsgQuestion,
 		Payload: buildQuestionPayload(q, idx, state.TotalQuestions),
+	})
+	e.hub.BroadcastToHost(sessionCode, hub.Message{
+		Type:    hub.MsgQuestion,
+		Payload: BuildHostQuestionPayload(q, idx, state.TotalQuestions),
 	})
 
 	// Start question timer.
