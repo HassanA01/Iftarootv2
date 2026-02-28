@@ -10,14 +10,14 @@ primary_region = "iad"
 [env]
   PORT = "8080"
 
-# Internal service only — not publicly accessible via HTTPS
-# The frontend nginx proxies to this app via Fly's private network
+# Backend is reachable at iftarootv2-backend.fly.dev (force_https=false, no redirect)
+# Primary access is via the frontend nginx proxy over Fly's private .internal network
 [http_service]
   internal_port = 8080
   force_https = false
   auto_stop_machines = true
   auto_start_machines = true
-  min_machines_running = 0
+  min_machines_running = 1  # keep alive — WebSocket game sessions can't survive machine restarts
 
 [[http_service.checks]]
   grace_period = "10s"

@@ -1,0 +1,9 @@
+.git
+docs
+frontend/node_modules
+frontend/dist
+frontend/coverage
+backend/tmp
+backend/bin
+*.test
+*.out
