@@ -90,6 +90,8 @@ export function PlayerGamePage() {
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   const [revealPayload, setRevealPayload] = useState<AnswerRevealPayload | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [prevLeaderboard, setPrevLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const leaderboardRef = useRef<LeaderboardEntry[]>([]);
   const [podium, setPodium] = useState<PodiumEntry[]>([]);
 
   const { send } = useWebSocket({
@@ -116,6 +118,8 @@ export function PlayerGamePage() {
           }
           case "leaderboard": {
             const p = msg.payload as { entries: LeaderboardEntry[] };
+            setPrevLeaderboard(leaderboardRef.current);
+            leaderboardRef.current = p.entries;
             setLeaderboard(p.entries);
             setPhase("leaderboard");
             break;
@@ -231,7 +235,7 @@ export function PlayerGamePage() {
       <div className="min-h-screen bg-gray-950 text-white flex flex-col items-center justify-center px-4">
         <div className="w-full max-w-sm space-y-5">
           <h2 className="text-2xl font-bold text-center">Leaderboard</h2>
-          <LeaderboardDisplay entries={leaderboard} highlightPlayerId={playerId} />
+          <LeaderboardDisplay entries={leaderboard} prevEntries={prevLeaderboard} highlightPlayerId={playerId} />
           <p className="text-gray-600 text-sm text-center">Waiting for host…</p>
         </div>
       </div>

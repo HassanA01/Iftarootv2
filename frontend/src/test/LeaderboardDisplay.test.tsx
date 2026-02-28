@@ -76,4 +76,51 @@ describe("LeaderboardDisplay", () => {
     render(<LeaderboardDisplay entries={[]} />);
     expect(screen.queryByText("🥇")).not.toBeInTheDocument();
   });
+
+  // --- FLIP animation (prevEntries) ---
+
+  it("renders correctly when prevEntries is provided (rank change scenario)", () => {
+    // Bob was first, Alice takes over — both should still render
+    const prev = [
+      { player_id: "p2", name: "Bob", score: 1500, rank: 1 },
+      { player_id: "p1", name: "Alice", score: 800, rank: 2 },
+    ];
+    const next = [
+      { player_id: "p1", name: "Alice", score: 2000, rank: 1 },
+      { player_id: "p2", name: "Bob", score: 1500, rank: 2 },
+    ];
+    render(<LeaderboardDisplay entries={next} prevEntries={prev} />);
+    expect(screen.getByText("Alice")).toBeInTheDocument();
+    expect(screen.getByText("Bob")).toBeInTheDocument();
+    // Alice is now rank 1 — should show gold medal
+    expect(screen.getByText("🥇")).toBeInTheDocument();
+    expect(screen.getByText("🥈")).toBeInTheDocument();
+  });
+
+  it("renders new entrants that were not in prevEntries", () => {
+    const prev = [{ player_id: "p1", name: "Alice", score: 1000, rank: 1 }];
+    const next = [
+      { player_id: "p1", name: "Alice", score: 2000, rank: 1 },
+      { player_id: "p3", name: "Carol", score: 1500, rank: 2 },
+    ];
+    render(<LeaderboardDisplay entries={next} prevEntries={prev} />);
+    expect(screen.getByText("Carol")).toBeInTheDocument();
+  });
+
+  it("shows (you) badge on correct entry when prevEntries is provided", () => {
+    const prev = [
+      { player_id: "p1", name: "Alice", score: 800, rank: 1 },
+      { player_id: "p2", name: "Bob", score: 500, rank: 2 },
+    ];
+    const next = [
+      { player_id: "p2", name: "Bob", score: 1500, rank: 1 },
+      { player_id: "p1", name: "Alice", score: 800, rank: 2 },
+    ];
+    render(
+      <LeaderboardDisplay entries={next} prevEntries={prev} highlightPlayerId="p2" />,
+    );
+    expect(screen.getByText("(you)")).toBeInTheDocument();
+    // Bob is now rank 1
+    expect(screen.getByText("🥇")).toBeInTheDocument();
+  });
 });

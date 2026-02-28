@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { useGameStore } from "../stores/gameStore";
@@ -59,6 +59,8 @@ export function HostGamePage() {
   const [currentQuestion, setCurrentQuestion] = useState<HostQuestionPayload | null>(null);
   const [revealPayload, setRevealPayload] = useState<AnswerRevealPayload | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [prevLeaderboard, setPrevLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const leaderboardRef = useRef<LeaderboardEntry[]>([]);
   const [podium, setPodium] = useState<PodiumEntry[]>([]);
   const [answeredCount, setAnsweredCount] = useState(0);
   const [wsReady, setWsReady] = useState(false);
@@ -89,6 +91,8 @@ export function HostGamePage() {
         }
         case "leaderboard": {
           const p = msg.payload as { entries: LeaderboardEntry[] };
+          setPrevLeaderboard(leaderboardRef.current);
+          leaderboardRef.current = p.entries;
           setLeaderboard(p.entries);
           setPhase("leaderboard");
           break;
@@ -173,7 +177,7 @@ export function HostGamePage() {
       <div className="min-h-screen bg-gray-950 text-white flex flex-col items-center justify-center px-4">
         <div className="w-full max-w-lg space-y-6">
           <h2 className="text-2xl font-bold text-center">Leaderboard</h2>
-          <LeaderboardDisplay entries={leaderboard} />
+          <LeaderboardDisplay entries={leaderboard} prevEntries={prevLeaderboard} />
           <button
             onClick={handleNextQuestion}
             className={`w-full text-white font-bold py-4 rounded-xl transition ${
