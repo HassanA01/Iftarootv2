@@ -1,0 +1,22 @@
+# Fly.io configuration for the React/nginx frontend
+# Deploy with: flyctl deploy --config fly.frontend.toml
+app = "iftaroot-frontend"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile.frontend"
+  target = "prod"
+  [build.args]
+    VITE_WS_BASE_URL = "wss://iftaroot-frontend.fly.dev"
+
+[http_service]
+  internal_port = 80
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1

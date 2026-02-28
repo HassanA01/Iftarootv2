@@ -1,4 +1,4 @@
-name: iftarootv2-prod
+name: iftaroot-prod
 
 services:
   postgres:

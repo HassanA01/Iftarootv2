@@ -3,7 +3,7 @@ package handlers
 import (
 	"net/http"
 
-	appMiddleware "github.com/HassanA01/Iftarootv2/backend/internal/middleware"
+	appMiddleware "github.com/HassanA01/Iftaroot/backend/internal/middleware"
 )
 
 func (h *Handler) RequireAuth(next http.Handler) http.Handler {

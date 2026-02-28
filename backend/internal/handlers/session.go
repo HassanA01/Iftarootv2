@@ -15,9 +15,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/HassanA01/Iftarootv2/backend/internal/hub"
-	appMiddleware "github.com/HassanA01/Iftarootv2/backend/internal/middleware"
-	"github.com/HassanA01/Iftarootv2/backend/internal/models"
+	"github.com/HassanA01/Iftaroot/backend/internal/hub"
+	appMiddleware "github.com/HassanA01/Iftaroot/backend/internal/middleware"
+	"github.com/HassanA01/Iftaroot/backend/internal/models"
 )
 
 func (h *Handler) CreateSession(w http.ResponseWriter, r *http.Request) {
