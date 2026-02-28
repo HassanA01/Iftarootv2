@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { useGameStore } from "../stores/gameStore";
 import { LeaderboardDisplay } from "../components/LeaderboardDisplay";
+import { PodiumScreen } from "../components/PodiumScreen";
 import type { WsMessage, LeaderboardEntry, PodiumEntry } from "../types";
 
 const WS_BASE = import.meta.env.VITE_WS_BASE_URL ?? "ws://localhost:8081";
@@ -138,33 +139,12 @@ export function HostGamePage() {
 
   // Podium
   if (phase === "podium") {
-    const medals = ["🥇", "🥈", "🥉"];
     return (
-      <div className="min-h-screen bg-gray-950 text-white flex flex-col items-center justify-center px-4">
-        <div className="w-full max-w-lg space-y-6 text-center">
-          <h1 className="text-4xl font-black">Game Over!</h1>
-          <div className="space-y-3">
-            {podium.map((entry, i) => (
-              <div
-                key={entry.player_id}
-                className="bg-gray-900 rounded-xl px-6 py-4 flex items-center justify-between"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl">{medals[i] ?? `#${entry.rank}`}</span>
-                  <span className="font-semibold text-lg">{entry.name}</span>
-                </div>
-                <span className="text-indigo-400 font-bold text-xl">{entry.score}</span>
-              </div>
-            ))}
-          </div>
-          <button
-            onClick={handleEndGame}
-            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-4 rounded-xl transition"
-          >
-            Back to Dashboard
-          </button>
-        </div>
-      </div>
+      <PodiumScreen
+        entries={podium}
+        onEnd={handleEndGame}
+        endLabel="Back to Dashboard"
+      />
     );
   }
 
