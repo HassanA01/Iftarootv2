@@ -86,11 +86,15 @@ export interface QuestionPayload {
   };
 }
 
-export interface AnswerRevealPayload {
-  correct_option_id: string;
+export interface RevealScoreEntry {
   is_correct: boolean;
   points: number;
   total_score: number;
+}
+
+export interface AnswerRevealPayload {
+  correct_option_id: string;
+  scores: Record<string, RevealScoreEntry>;
 }
 
 export interface PodiumEntry {

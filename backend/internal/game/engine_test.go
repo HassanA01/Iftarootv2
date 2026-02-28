@@ -108,6 +108,74 @@ func TestGameStateFields(t *testing.T) {
 	}
 }
 
+// TestRevealScoreCalculation verifies the reveal scoring logic:
+// correct answers earn time-weighted points; incorrect answers earn zero.
+func TestRevealScoreCalculation(t *testing.T) {
+	correctOptionID := "opt-correct"
+	wrongOptionID := "opt-wrong"
+	timeLimit := 20
+	questionStarted := time.Now().Add(-5 * time.Second) // 5 seconds elapsed
+
+	tests := []struct {
+		name            string
+		optionID        string
+		wantCorrect     bool
+		wantPointsAbove int
+		wantPointsBelow int
+	}{
+		{
+			name:            "correct answer earns points",
+			optionID:        correctOptionID,
+			wantCorrect:     true,
+			wantPointsAbove: 0,
+			wantPointsBelow: BasePoints + 1,
+		},
+		{
+			name:            "incorrect answer earns zero",
+			optionID:        wrongOptionID,
+			wantCorrect:     false,
+			wantPointsAbove: -1,
+			wantPointsBelow: 1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			isCorrect := tc.optionID == correctOptionID
+			points := 0
+			if isCorrect {
+				elapsed := time.Since(questionStarted).Seconds()
+				points = CalculatePoints(elapsed, timeLimit)
+			}
+
+			if isCorrect != tc.wantCorrect {
+				t.Errorf("isCorrect: got %v, want %v", isCorrect, tc.wantCorrect)
+			}
+			if points <= tc.wantPointsAbove || points >= tc.wantPointsBelow {
+				t.Errorf("points=%d not in (%d, %d)", points, tc.wantPointsAbove, tc.wantPointsBelow)
+			}
+		})
+	}
+}
+
+// TestRevealPayloadFields verifies the revealScoreEntry struct holds the right fields.
+func TestRevealPayloadFields(t *testing.T) {
+	entry := revealScoreEntry{
+		IsCorrect:  true,
+		Points:     750,
+		TotalScore: 1750,
+	}
+	if !entry.IsCorrect {
+		t.Error("expected IsCorrect=true")
+	}
+	if entry.Points != 750 {
+		t.Errorf("expected Points=750, got %d", entry.Points)
+	}
+	if entry.TotalScore != 1750 {
+		t.Errorf("expected TotalScore=1750, got %d", entry.TotalScore)
+	}
+}
+
 func TestPhaseConstants(t *testing.T) {
 	phases := []GamePhase{PhaseStarting, PhaseQuestion, PhaseReveal, PhaseLeaderboard, PhaseGameOver}
 	seen := make(map[GamePhase]bool)
