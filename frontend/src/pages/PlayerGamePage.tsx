@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { useWebSocket } from "../hooks/useWebSocket";
+import { LeaderboardDisplay } from "../components/LeaderboardDisplay";
 import type { WsMessage, QuestionPayload, LeaderboardEntry, PodiumEntry } from "../types";
 
 const WS_BASE = import.meta.env.VITE_WS_BASE_URL ?? "ws://localhost:8081";
@@ -89,6 +90,8 @@ export function PlayerGamePage() {
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   const [revealPayload, setRevealPayload] = useState<AnswerRevealPayload | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [prevLeaderboard, setPrevLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const leaderboardRef = useRef<LeaderboardEntry[]>([]);
   const [podium, setPodium] = useState<PodiumEntry[]>([]);
 
   const { send } = useWebSocket({
@@ -115,6 +118,8 @@ export function PlayerGamePage() {
           }
           case "leaderboard": {
             const p = msg.payload as { entries: LeaderboardEntry[] };
+            setPrevLeaderboard(leaderboardRef.current);
+            leaderboardRef.current = p.entries;
             setLeaderboard(p.entries);
             setPhase("leaderboard");
             break;
@@ -226,35 +231,11 @@ export function PlayerGamePage() {
 
   // Leaderboard
   if (phase === "leaderboard") {
-    const myEntry = leaderboard.find((e) => e.player_id === playerId);
     return (
       <div className="min-h-screen bg-gray-950 text-white flex flex-col items-center justify-center px-4">
         <div className="w-full max-w-sm space-y-5">
           <h2 className="text-2xl font-bold text-center">Leaderboard</h2>
-          {myEntry && (
-            <div className="bg-indigo-900/40 border border-indigo-700 rounded-xl px-5 py-3 flex justify-between items-center">
-              <span className="font-medium">
-                You <span className="text-xs text-indigo-400">#{myEntry.rank}</span>
-              </span>
-              <span className="text-indigo-300 font-bold">{myEntry.score}</span>
-            </div>
-          )}
-          <div className="space-y-2">
-            {leaderboard.slice(0, 5).map((entry, i) => (
-              <div
-                key={entry.player_id}
-                className={`rounded-xl px-5 py-3 flex items-center justify-between ${
-                  entry.player_id === playerId ? "bg-indigo-900/30" : "bg-gray-900"
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-gray-500 w-5 font-bold">#{i + 1}</span>
-                  <span>{entry.name}</span>
-                </div>
-                <span className="font-bold text-indigo-300">{entry.score}</span>
-              </div>
-            ))}
-          </div>
+          <LeaderboardDisplay entries={leaderboard} prevEntries={prevLeaderboard} highlightPlayerId={playerId} />
           <p className="text-gray-600 text-sm text-center">Waiting for host…</p>
         </div>
       </div>
