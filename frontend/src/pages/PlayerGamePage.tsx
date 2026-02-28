@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { LeaderboardDisplay } from "../components/LeaderboardDisplay";
+import { PodiumScreen } from "../components/PodiumScreen";
 import type { WsMessage, QuestionPayload, LeaderboardEntry, PodiumEntry } from "../types";
 
 const WS_BASE = import.meta.env.VITE_WS_BASE_URL ?? "ws://localhost:8081";
@@ -186,47 +187,7 @@ export function PlayerGamePage() {
 
   // Podium
   if (phase === "podium") {
-    const myEntry = podium.find((e) => e.player_id === playerId);
-    const medals = ["🥇", "🥈", "🥉"];
-    return (
-      <div className="min-h-screen bg-gray-950 text-white flex flex-col items-center justify-center px-4">
-        <div className="w-full max-w-sm space-y-6 text-center">
-          <h1 className="text-3xl font-black">Game Over!</h1>
-          {myEntry && (
-            <div className="bg-indigo-900/40 border border-indigo-700 rounded-2xl p-6">
-              <p className="text-gray-400 text-sm mb-1">Your final score</p>
-              <p className="text-4xl font-black text-indigo-300">{myEntry.score}</p>
-              <p className="text-gray-400 mt-2">Rank #{myEntry.rank}</p>
-            </div>
-          )}
-          <div className="space-y-2">
-            {podium.map((entry, i) => (
-              <div
-                key={entry.player_id}
-                className={`rounded-xl px-5 py-3 flex items-center justify-between ${
-                  entry.player_id === playerId ? "bg-indigo-900/50 border border-indigo-600" : "bg-gray-900"
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <span>{medals[i] ?? `#${entry.rank}`}</span>
-                  <span className="font-medium">{entry.name}</span>
-                  {entry.player_id === playerId && (
-                    <span className="text-xs text-indigo-400">(you)</span>
-                  )}
-                </div>
-                <span className="font-bold text-indigo-300">{entry.score}</span>
-              </div>
-            ))}
-          </div>
-          <p className="text-gray-500 text-sm">
-            Want to play again?{" "}
-            <a href="/join" className="text-indigo-400 hover:text-indigo-300 transition">
-              Join a new game
-            </a>
-          </p>
-        </div>
-      </div>
-    );
+    return <PodiumScreen entries={podium} playerId={playerId} />;
   }
 
   // Leaderboard

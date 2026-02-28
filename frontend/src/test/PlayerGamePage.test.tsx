@@ -152,9 +152,11 @@ describe("PlayerGamePage", () => {
       }),
     );
     expect(screen.getByText(/game over/i)).toBeInTheDocument();
-    // "2700" appears in both the hero score and the podium list.
+    // Alice is rank 1 — her score appears on the podium block.
     expect(screen.getAllByText("2700").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText(/your final score/i)).toBeInTheDocument();
+    // Rank 1 player sees their name on the podium (with "(you)" suffix) and the gold medal.
+    expect(screen.getByText(/Alice/)).toBeInTheDocument();
+    expect(screen.getByText("🥇")).toBeInTheDocument();
   });
 
   it("shows play again link on podium screen", () => {
