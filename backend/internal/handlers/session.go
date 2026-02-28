@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"math/big"
 	"net/http"
 	"time"
@@ -84,6 +86,13 @@ func (h *Handler) GetSession(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) EndSession(w http.ResponseWriter, r *http.Request) {
 	sessionID := chi.URLParam(r, "sessionID")
 	now := time.Now()
+
+	// Fetch the session code so we can notify WebSocket clients.
+	var code string
+	_ = h.db.QueryRow(r.Context(),
+		`SELECT code FROM game_sessions WHERE id = $1`, sessionID,
+	).Scan(&code)
+
 	_, err := h.db.Exec(r.Context(),
 		`UPDATE game_sessions SET status = $1, ended_at = $2 WHERE id = $3`,
 		models.GameStatusFinished, now, sessionID,
@@ -92,6 +101,12 @@ func (h *Handler) EndSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to end session")
 		return
 	}
+
+	// Notify all WebSocket clients and clean up Redis.
+	if code != "" {
+		h.engine.EndGame(context.Background(), code)
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -201,6 +216,14 @@ func (h *Handler) StartSession(w http.ResponseWriter, r *http.Request) {
 		Type:    hub.MsgGameStarted,
 		Payload: map[string]string{"session_id": session.ID.String()},
 	})
+
+	// Kick off the game engine in a goroutine with a background context.
+	// r.Context() is cancelled when the HTTP response is sent, so we must not use it here.
+	go func() {
+		if err := h.engine.StartGame(context.Background(), session.Code, session.ID.String(), session.QuizID.String()); err != nil {
+			log.Printf("engine.StartGame error: %v", err)
+		}
+	}()
 
 	writeJSON(w, http.StatusOK, session)
 }

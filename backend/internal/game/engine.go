@@ -1,0 +1,654 @@
+package game
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log"
+	"sync"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
+
+	"github.com/HassanA01/Iftarootv2/backend/internal/hub"
+	"github.com/HassanA01/Iftarootv2/backend/internal/models"
+)
+
+// GamePhase represents the current phase of the game.
+type GamePhase string
+
+const (
+	PhaseStarting    GamePhase = "starting"      // post-start, waiting for host to reconnect
+	PhaseQuestion    GamePhase = "question_open" // question active, accepting answers
+	PhaseReveal      GamePhase = "answer_reveal" // showing correct answer
+	PhaseLeaderboard GamePhase = "leaderboard"   // leaderboard between questions
+	PhaseGameOver    GamePhase = "game_over"     // final podium
+)
+
+// GameState is persisted in Redis for session recovery.
+type GameState struct {
+	SessionCode     string    `json:"session_code"`
+	SessionID       string    `json:"session_id"`
+	CurrentIndex    int       `json:"current_index"`
+	TotalQuestions  int       `json:"total_questions"`
+	Phase           GamePhase `json:"phase"`
+	QuestionStarted time.Time `json:"question_started"`
+}
+
+// storedQuestion is the full question (including correct answers) cached in Redis.
+type storedQuestion struct {
+	ID        string         `json:"id"`
+	Text      string         `json:"text"`
+	TimeLimit int            `json:"time_limit"`
+	Order     int            `json:"order"`
+	Options   []storedOption `json:"options"`
+}
+
+type storedOption struct {
+	ID        string `json:"id"`
+	Text      string `json:"text"`
+	IsCorrect bool   `json:"is_correct"`
+}
+
+// playerAnswer tracks a single player's answer in Redis.
+type playerAnswer struct {
+	OptionID   string    `json:"option_id"`
+	AnsweredAt time.Time `json:"answered_at"`
+}
+
+// revealScoreEntry is the per-player score included in answer_reveal.
+type revealScoreEntry struct {
+	IsCorrect  bool `json:"is_correct"`
+	Points     int  `json:"points"`
+	TotalScore int  `json:"total_score"`
+}
+
+// Engine orchestrates the game loop: question broadcast, answer collection, reveal, leaderboard.
+type Engine struct {
+	hub    *hub.Hub
+	db     *pgxpool.Pool
+	redis  *redis.Client
+	mu     sync.Mutex
+	timers map[string]chan struct{} // sessionCode -> cancel channel
+}
+
+// New creates a new Engine.
+func NewEngine(h *hub.Hub, db *pgxpool.Pool, redisClient *redis.Client) *Engine {
+	return &Engine{
+		hub:    h,
+		db:     db,
+		redis:  redisClient,
+		timers: make(map[string]chan struct{}),
+	}
+}
+
+// redisKeyState returns the Redis key for game state.
+func redisKeyState(code string) string { return fmt.Sprintf("game:%s:state", code) }
+
+// redisKeyQuestions returns the Redis key for cached questions.
+func redisKeyQuestions(code string) string { return fmt.Sprintf("game:%s:questions", code) }
+
+// redisKeyAnswers returns the Redis key for answers for a question index.
+func redisKeyAnswers(code string, idx int) string {
+	return fmt.Sprintf("game:%s:q%d:answers", code, idx)
+}
+
+// StartGame loads questions from DB, stores them in Redis, and starts a 3-second
+// countdown before broadcasting the first question. This gives clients time to
+// navigate from the lobby to the game page.
+func (e *Engine) StartGame(ctx context.Context, sessionCode, sessionID, quizID string) error {
+	questions, err := e.loadQuestions(ctx, quizID)
+	if err != nil {
+		return fmt.Errorf("load questions: %w", err)
+	}
+	if len(questions) == 0 {
+		return fmt.Errorf("quiz has no questions")
+	}
+
+	// Cache questions in Redis (TTL 24h).
+	data, err := json.Marshal(questions)
+	if err != nil {
+		return err
+	}
+	if err := e.redis.Set(ctx, redisKeyQuestions(sessionCode), data, 24*time.Hour).Err(); err != nil {
+		return err
+	}
+
+	state := &GameState{
+		SessionCode:    sessionCode,
+		SessionID:      sessionID,
+		CurrentIndex:   0,
+		TotalQuestions: len(questions),
+		Phase:          PhaseStarting,
+	}
+	if err := e.saveState(ctx, sessionCode, state); err != nil {
+		return err
+	}
+
+	// Broadcast first question after a short delay so clients can navigate.
+	go func() {
+		time.Sleep(3 * time.Second)
+		bgCtx := context.Background()
+		if err := e.broadcastQuestion(bgCtx, sessionCode, 0); err != nil {
+			log.Printf("engine: broadcastQuestion error: %v", err)
+		}
+	}()
+
+	return nil
+}
+
+// GetCurrentState retrieves the current GameState from Redis.
+func (e *Engine) GetCurrentState(ctx context.Context, sessionCode string) (*GameState, error) {
+	return e.loadState(ctx, sessionCode)
+}
+
+// GetCurrentQuestion returns the question at the current index for sending to a late-joining client.
+func (e *Engine) GetCurrentQuestion(ctx context.Context, sessionCode string) (*hub.Message, error) {
+	state, err := e.loadState(ctx, sessionCode)
+	if err != nil {
+		return nil, err
+	}
+	if state.Phase != PhaseQuestion {
+		return nil, nil
+	}
+	questions, err := e.loadCachedQuestions(ctx, sessionCode)
+	if err != nil {
+		return nil, err
+	}
+	q := questions[state.CurrentIndex]
+	msg := hub.Message{
+		Type:    hub.MsgQuestion,
+		Payload: buildQuestionPayload(q, state.CurrentIndex, state.TotalQuestions),
+	}
+	return &msg, nil
+}
+
+// SubmitAnswer records a player's answer and triggers reveal if all players have answered.
+func (e *Engine) SubmitAnswer(ctx context.Context, sessionCode, playerID, questionIDStr, optionIDStr string) error {
+	state, err := e.loadState(ctx, sessionCode)
+	if err != nil {
+		return fmt.Errorf("load state: %w", err)
+	}
+	if state.Phase != PhaseQuestion {
+		return fmt.Errorf("not in question phase (current: %s)", state.Phase)
+	}
+
+	questions, err := e.loadCachedQuestions(ctx, sessionCode)
+	if err != nil {
+		return err
+	}
+	q := questions[state.CurrentIndex]
+	if q.ID != questionIDStr {
+		return fmt.Errorf("question_id mismatch")
+	}
+
+	// Store answer in Redis (idempotent — first answer wins).
+	answerKey := redisKeyAnswers(sessionCode, state.CurrentIndex)
+	existing, err := e.redis.HGet(ctx, answerKey, playerID).Result()
+	if err == nil && existing != "" {
+		return nil // already answered
+	}
+
+	ans := playerAnswer{
+		OptionID:   optionIDStr,
+		AnsweredAt: time.Now(),
+	}
+	ansData, _ := json.Marshal(ans)
+	e.redis.HSet(ctx, answerKey, playerID, string(ansData))
+	e.redis.Expire(ctx, answerKey, 24*time.Hour)
+
+	// Check if all connected players have answered.
+	playerCount := e.hub.RoomPlayerCount(sessionCode)
+	answeredCount, _ := e.redis.HLen(ctx, answerKey).Result()
+	if playerCount > 0 && int(answeredCount) >= playerCount {
+		// Cancel the timer and reveal immediately.
+		e.cancelTimer(sessionCode)
+		go func() {
+			bgCtx := context.Background()
+			if err := e.triggerReveal(bgCtx, sessionCode); err != nil {
+				log.Printf("engine: triggerReveal error: %v", err)
+			}
+		}()
+	}
+
+	return nil
+}
+
+// NextQuestion advances the game to the next question or to game_over.
+// Called by the host from the leaderboard screen.
+func (e *Engine) NextQuestion(ctx context.Context, sessionCode string) error {
+	state, err := e.loadState(ctx, sessionCode)
+	if err != nil {
+		return err
+	}
+	if state.Phase != PhaseLeaderboard {
+		return fmt.Errorf("can only advance from leaderboard phase (current: %s)", state.Phase)
+	}
+
+	next := state.CurrentIndex + 1
+	if next >= state.TotalQuestions {
+		return e.triggerGameOver(ctx, sessionCode)
+	}
+	return e.broadcastQuestion(ctx, sessionCode, next)
+}
+
+// broadcastQuestion sends the question at idx to all clients and starts the timer.
+func (e *Engine) broadcastQuestion(ctx context.Context, sessionCode string, idx int) error {
+	questions, err := e.loadCachedQuestions(ctx, sessionCode)
+	if err != nil {
+		return err
+	}
+	q := questions[idx]
+
+	state, err := e.loadState(ctx, sessionCode)
+	if err != nil {
+		return err
+	}
+	state.CurrentIndex = idx
+	state.Phase = PhaseQuestion
+	state.QuestionStarted = time.Now()
+	if err := e.saveState(ctx, sessionCode, state); err != nil {
+		return err
+	}
+
+	e.hub.Broadcast(sessionCode, hub.Message{
+		Type:    hub.MsgQuestion,
+		Payload: buildQuestionPayload(q, idx, state.TotalQuestions),
+	})
+
+	// Start question timer.
+	timeLimit := time.Duration(q.TimeLimit) * time.Second
+	cancel := make(chan struct{})
+	e.mu.Lock()
+	// Cancel any existing timer.
+	if old, ok := e.timers[sessionCode]; ok {
+		close(old)
+	}
+	e.timers[sessionCode] = cancel
+	e.mu.Unlock()
+
+	go func(code string, questionIdx int, cancelCh chan struct{}) {
+		select {
+		case <-time.After(timeLimit):
+			// Verify state is still this question before triggering.
+			bgCtx := context.Background()
+			st, err := e.loadState(bgCtx, code)
+			if err != nil || st.CurrentIndex != questionIdx || st.Phase != PhaseQuestion {
+				return
+			}
+			if err := e.triggerReveal(bgCtx, code); err != nil {
+				log.Printf("engine: timer reveal error: %v", err)
+			}
+		case <-cancelCh:
+			// Cancelled by SubmitAnswer (all answered) or NextQuestion.
+		}
+	}(sessionCode, idx, cancel)
+
+	return nil
+}
+
+// triggerReveal broadcasts the correct answer, computes scores, persists to DB.
+func (e *Engine) triggerReveal(ctx context.Context, sessionCode string) error {
+	state, err := e.loadState(ctx, sessionCode)
+	if err != nil {
+		return err
+	}
+	if state.Phase != PhaseQuestion {
+		return nil // already revealed
+	}
+
+	state.Phase = PhaseReveal
+	if err := e.saveState(ctx, sessionCode, state); err != nil {
+		return err
+	}
+
+	questions, err := e.loadCachedQuestions(ctx, sessionCode)
+	if err != nil {
+		return err
+	}
+	q := questions[state.CurrentIndex]
+
+	// Find correct option.
+	var correctOptionID string
+	for _, opt := range q.Options {
+		if opt.IsCorrect {
+			correctOptionID = opt.ID
+			break
+		}
+	}
+
+	// Load answers from Redis.
+	answerKey := redisKeyAnswers(sessionCode, state.CurrentIndex)
+	rawAnswers, _ := e.redis.HGetAll(ctx, answerKey).Result()
+
+	scores := make(map[string]revealScoreEntry)
+	for playerID, rawAns := range rawAnswers {
+		var ans playerAnswer
+		if err := json.Unmarshal([]byte(rawAns), &ans); err != nil {
+			continue
+		}
+		isCorrect := ans.OptionID == correctOptionID
+		points := 0
+		if isCorrect {
+			elapsed := ans.AnsweredAt.Sub(state.QuestionStarted).Seconds()
+			points = CalculatePoints(elapsed, q.TimeLimit)
+		}
+
+		// Persist to DB.
+		playerUUID, err := uuid.Parse(playerID)
+		if err != nil {
+			continue
+		}
+		optionUUID, err := uuid.Parse(ans.OptionID)
+		if err != nil {
+			continue
+		}
+		questionUUID, err := uuid.Parse(q.ID)
+		if err != nil {
+			continue
+		}
+		sessionUUID, err := uuid.Parse(state.SessionID)
+		if err != nil {
+			continue
+		}
+
+		_, dbErr := e.db.Exec(ctx,
+			`INSERT INTO game_answers (id, session_id, player_id, question_id, option_id, answered_at, is_correct, points)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			 ON CONFLICT (session_id, player_id, question_id) DO NOTHING`,
+			uuid.New(), sessionUUID, playerUUID, questionUUID, optionUUID,
+			ans.AnsweredAt, isCorrect, points,
+		)
+		if dbErr != nil {
+			log.Printf("engine: insert answer error: %v", dbErr)
+		}
+
+		if points > 0 {
+			_, _ = e.db.Exec(ctx,
+				`UPDATE game_players SET score = score + $1 WHERE id = $2`,
+				points, playerUUID,
+			)
+		}
+
+		// Get total score for this player.
+		var totalScore int
+		_ = e.db.QueryRow(ctx,
+			`SELECT score FROM game_players WHERE id = $1`, playerUUID,
+		).Scan(&totalScore)
+
+		scores[playerID] = revealScoreEntry{
+			IsCorrect:  isCorrect,
+			Points:     points,
+			TotalScore: totalScore,
+		}
+	}
+
+	e.hub.Broadcast(sessionCode, hub.Message{
+		Type: hub.MsgAnswerReveal,
+		Payload: map[string]any{
+			"correct_option_id": correctOptionID,
+			"scores":            scores,
+		},
+	})
+
+	// Auto-advance to leaderboard after 3 seconds.
+	go func() {
+		time.Sleep(3 * time.Second)
+		bgCtx := context.Background()
+		if err := e.broadcastLeaderboard(bgCtx, sessionCode); err != nil {
+			log.Printf("engine: broadcastLeaderboard error: %v", err)
+		}
+	}()
+
+	return nil
+}
+
+// broadcastLeaderboard sends the current leaderboard to all clients.
+func (e *Engine) broadcastLeaderboard(ctx context.Context, sessionCode string) error {
+	state, err := e.loadState(ctx, sessionCode)
+	if err != nil {
+		return err
+	}
+	state.Phase = PhaseLeaderboard
+	if err := e.saveState(ctx, sessionCode, state); err != nil {
+		return err
+	}
+
+	entries, err := e.getLeaderboard(ctx, state.SessionID)
+	if err != nil {
+		return err
+	}
+
+	e.hub.Broadcast(sessionCode, hub.Message{
+		Type:    hub.MsgLeaderboard,
+		Payload: map[string]any{"entries": entries},
+	})
+	return nil
+}
+
+// triggerGameOver broadcasts the final podium.
+func (e *Engine) triggerGameOver(ctx context.Context, sessionCode string) error {
+	state, err := e.loadState(ctx, sessionCode)
+	if err != nil {
+		return err
+	}
+	state.Phase = PhaseGameOver
+	if err := e.saveState(ctx, sessionCode, state); err != nil {
+		return err
+	}
+
+	// Update DB session status to finished.
+	_, _ = e.db.Exec(ctx,
+		`UPDATE game_sessions SET status = 'finished', ended_at = NOW() WHERE code = $1`,
+		sessionCode,
+	)
+
+	entries, err := e.getLeaderboard(ctx, state.SessionID)
+	if err != nil {
+		return err
+	}
+
+	e.hub.Broadcast(sessionCode, hub.Message{
+		Type:    hub.MsgPodium,
+		Payload: map[string]any{"entries": entries},
+	})
+	return nil
+}
+
+// EndGame forcefully ends the game (e.g. host ended session early).
+// Broadcasts game_over with reason="session_ended" and cleans up Redis.
+func (e *Engine) EndGame(ctx context.Context, sessionCode string) {
+	e.cancelTimer(sessionCode)
+
+	e.hub.Broadcast(sessionCode, hub.Message{
+		Type: hub.MsgGameOver,
+		Payload: map[string]any{
+			"reason": "session_ended",
+		},
+	})
+
+	// Clean up Redis keys.
+	state, err := e.loadState(ctx, sessionCode)
+	if err == nil {
+		for i := 0; i < state.TotalQuestions; i++ {
+			e.redis.Del(ctx, redisKeyAnswers(sessionCode, i))
+		}
+	}
+	e.redis.Del(ctx, redisKeyState(sessionCode))
+	e.redis.Del(ctx, redisKeyQuestions(sessionCode))
+}
+
+// cancelTimer cancels the active question timer for a session.
+func (e *Engine) cancelTimer(sessionCode string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if ch, ok := e.timers[sessionCode]; ok {
+		close(ch)
+		delete(e.timers, sessionCode)
+	}
+}
+
+// getLeaderboard queries DB for the session leaderboard.
+func (e *Engine) getLeaderboard(ctx context.Context, sessionID string) ([]models.LeaderboardEntry, error) {
+	rows, err := e.db.Query(ctx,
+		`SELECT id, name, score FROM game_players WHERE session_id = $1 ORDER BY score DESC`,
+		sessionID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []models.LeaderboardEntry
+	rank := 1
+	for rows.Next() {
+		var e models.LeaderboardEntry
+		if err := rows.Scan(&e.PlayerID, &e.Name, &e.Score); err != nil {
+			return nil, err
+		}
+		e.Rank = rank
+		rank++
+		entries = append(entries, e)
+	}
+	if entries == nil {
+		entries = []models.LeaderboardEntry{}
+	}
+	return entries, nil
+}
+
+// loadQuestions fetches questions with options from DB.
+func (e *Engine) loadQuestions(ctx context.Context, quizID string) ([]storedQuestion, error) {
+	rows, err := e.db.Query(ctx,
+		`SELECT id, text, time_limit, "order" FROM questions WHERE quiz_id = $1 ORDER BY "order" ASC`,
+		quizID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var questions []storedQuestion
+	for rows.Next() {
+		var q storedQuestion
+		if err := rows.Scan(&q.ID, &q.Text, &q.TimeLimit, &q.Order); err != nil {
+			return nil, err
+		}
+		questions = append(questions, q)
+	}
+
+	for i := range questions {
+		optRows, err := e.db.Query(ctx,
+			`SELECT id, text, is_correct FROM options WHERE question_id = $1 ORDER BY id`,
+			questions[i].ID,
+		)
+		if err != nil {
+			return nil, err
+		}
+		for optRows.Next() {
+			var opt storedOption
+			if err := optRows.Scan(&opt.ID, &opt.Text, &opt.IsCorrect); err != nil {
+				optRows.Close()
+				return nil, err
+			}
+			questions[i].Options = append(questions[i].Options, opt)
+		}
+		optRows.Close()
+	}
+	return questions, nil
+}
+
+func (e *Engine) loadCachedQuestions(ctx context.Context, sessionCode string) ([]storedQuestion, error) {
+	data, err := e.redis.Get(ctx, redisKeyQuestions(sessionCode)).Bytes()
+	if err != nil {
+		return nil, fmt.Errorf("questions not in cache: %w", err)
+	}
+	var questions []storedQuestion
+	if err := json.Unmarshal(data, &questions); err != nil {
+		return nil, err
+	}
+	return questions, nil
+}
+
+func (e *Engine) saveState(ctx context.Context, sessionCode string, state *GameState) error {
+	data, err := json.Marshal(state)
+	if err != nil {
+		return err
+	}
+	return e.redis.Set(ctx, redisKeyState(sessionCode), data, 24*time.Hour).Err()
+}
+
+func (e *Engine) loadState(ctx context.Context, sessionCode string) (*GameState, error) {
+	data, err := e.redis.Get(ctx, redisKeyState(sessionCode)).Bytes()
+	if err != nil {
+		return nil, fmt.Errorf("no game state for %s: %w", sessionCode, err)
+	}
+	var state GameState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return nil, err
+	}
+	return &state, nil
+}
+
+// buildQuestionPayload constructs the question broadcast payload.
+// Options do NOT include is_correct (players must not see the answer).
+func buildQuestionPayload(q storedQuestion, idx, total int) map[string]any {
+	opts := make([]map[string]string, 0, len(q.Options))
+	for _, o := range q.Options {
+		opts = append(opts, map[string]string{"id": o.ID, "text": o.Text})
+	}
+	return map[string]any{
+		"question_index":  idx,
+		"total_questions": total,
+		"question": map[string]any{
+			"id":         q.ID,
+			"text":       q.Text,
+			"time_limit": q.TimeLimit,
+			"options":    opts,
+		},
+	}
+}
+
+// BuildHostQuestionPayload is the same as buildQuestionPayload but includes is_correct.
+func BuildHostQuestionPayload(q storedQuestion, idx, total int) map[string]any {
+	opts := make([]map[string]any, 0, len(q.Options))
+	for _, o := range q.Options {
+		opts = append(opts, map[string]any{
+			"id":         o.ID,
+			"text":       o.Text,
+			"is_correct": o.IsCorrect,
+		})
+	}
+	return map[string]any{
+		"question_index":  idx,
+		"total_questions": total,
+		"question": map[string]any{
+			"id":         q.ID,
+			"text":       q.Text,
+			"time_limit": q.TimeLimit,
+			"options":    opts,
+		},
+	}
+}
+
+// GetHostQuestion returns the current question with is_correct included (for host display).
+func (e *Engine) GetHostQuestion(ctx context.Context, sessionCode string) (*hub.Message, error) {
+	state, err := e.loadState(ctx, sessionCode)
+	if err != nil {
+		return nil, err
+	}
+	if state.Phase != PhaseQuestion {
+		return nil, nil
+	}
+	questions, err := e.loadCachedQuestions(ctx, sessionCode)
+	if err != nil {
+		return nil, err
+	}
+	q := questions[state.CurrentIndex]
+	msg := hub.Message{
+		Type:    hub.MsgQuestion,
+		Payload: BuildHostQuestionPayload(q, state.CurrentIndex, state.TotalQuestions),
+	}
+	return &msg, nil
+}

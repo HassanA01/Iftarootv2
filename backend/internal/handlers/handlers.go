@@ -6,6 +6,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/HassanA01/Iftarootv2/backend/internal/config"
+	"github.com/HassanA01/Iftarootv2/backend/internal/game"
 	"github.com/HassanA01/Iftarootv2/backend/internal/hub"
 )
 
@@ -13,6 +14,7 @@ type Handler struct {
 	db     *pgxpool.Pool
 	redis  *redis.Client
 	hub    *hub.Hub
+	engine *game.Engine
 	config *config.Config
 }
 
@@ -21,6 +23,7 @@ func New(db *pgxpool.Pool, redisClient *redis.Client, gameHub *hub.Hub, cfg *con
 		db:     db,
 		redis:  redisClient,
 		hub:    gameHub,
+		engine: game.NewEngine(gameHub, db, redisClient),
 		config: cfg,
 	}
 }
