@@ -195,14 +195,22 @@ primary_region = "iad"
 [env]
   PORT = "8080"
 
-# Internal service only — not publicly accessible via HTTPS
-# The frontend nginx proxies to this app via Fly's private network
+# Backend is reachable at iftaroot-backend.fly.dev (force_https=false, no redirect)
+# Primary access is via the frontend nginx proxy over Fly's private .internal network
 [http_service]
   internal_port = 8080
   force_https = false
   auto_stop_machines = true
   auto_start_machines = true
-  min_machines_running = 0
+  min_machines_running = 1  # keep alive — WebSocket game sessions can't survive machine restarts
+
+[[http_service.checks]]
+  grace_period = "10s"
+  interval = "15s"
+  method = "GET"
+  path = "/health"
+  protocol = "http"
+  timeout = "5s"
 
 [[vm]]
   memory = "256mb"
@@ -302,7 +310,7 @@ Append this after the `docker-build` job (after line 173):
       - uses: actions/checkout@v4
 
       - name: Set up flyctl
-        uses: superfly/flyctl-actions/setup-flyctl@master
+        uses: superfly/flyctl-actions/setup-flyctl@v1.5
 
       - name: Deploy backend
         run: flyctl deploy --remote-only --config fly.backend.toml
@@ -416,7 +424,13 @@ curl -I https://iftaroot-frontend.fly.dev
 **2. Test API proxy:**
 ```bash
 curl https://iftaroot-frontend.fly.dev/api/v1/health
-# Expected: 200 OK (or whatever your health endpoint returns)
+# Expected: JSON response from Go backend (proxied through nginx)
+```
+
+**2b. Test backend health directly:**
+```bash
+curl https://iftaroot-backend.fly.dev/health
+# Expected: 200 OK
 ```
 
 **3. Test WebSocket (browser):**
