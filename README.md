@@ -1,4 +1,4 @@
-# Iftarootv2
+# Iftaroot
 
 A real-time multiplayer quiz game platform — think Kahoot, built with Go and React.
 
@@ -96,7 +96,7 @@ docker compose exec frontend pnpm exec tsc --noEmit
 ## Project Structure
 
 ```
-Iftarootv2/
+Iftaroot/
 ├── backend/
 │   ├── cmd/server/         # Entry point
 │   ├── internal/

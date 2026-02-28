@@ -5,9 +5,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
-	"github.com/HassanA01/Iftarootv2/backend/internal/config"
-	"github.com/HassanA01/Iftarootv2/backend/internal/game"
-	"github.com/HassanA01/Iftarootv2/backend/internal/hub"
+	"github.com/HassanA01/Iftaroot/backend/internal/config"
+	"github.com/HassanA01/Iftaroot/backend/internal/game"
+	"github.com/HassanA01/Iftaroot/backend/internal/hub"
 )
 
 type Handler struct {

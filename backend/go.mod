@@ -1,4 +1,4 @@
-module github.com/HassanA01/Iftarootv2/backend
+module github.com/HassanA01/Iftaroot/backend
 
 go 1.24.5
 

@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Deploy Iftarootv2 to Fly.io and add a GitHub Actions CD job that automatically deploys every push to `main` after all CI checks pass.
+**Goal:** Deploy Iftaroot to Fly.io and add a GitHub Actions CD job that automatically deploys every push to `main` after all CI checks pass.
 
 **Architecture:** Two Fly.io apps (backend Go binary + frontend nginx) communicate over Fly's private `.internal` network. Backend is not publicly exposed — all traffic enters through the frontend nginx which proxies `/api/*` and WebSocket upgrades to the backend. Fly Postgres + Upstash Redis provide managed data stores.
 
@@ -23,18 +23,18 @@ fly auth login
 
 # 3. Create Fly Postgres (free small tier)
 fly postgres create \
-  --name iftarootv2-db \
+  --name iftaroot-db \
   --region iad \
   --initial-cluster-size 1 \
   --vm-size shared-cpu-1x \
   --volume-size 1
 
 # 4. Create the two apps
-fly apps create iftarootv2-backend
-fly apps create iftarootv2-frontend
+fly apps create iftaroot-backend
+fly apps create iftaroot-frontend
 
 # 5. Attach Postgres to backend (auto-sets DATABASE_URL secret)
-fly postgres attach iftarootv2-db --app iftarootv2-backend
+fly postgres attach iftaroot-db --app iftaroot-backend
 
 # 6. Sign up at https://upstash.com → create a Redis database (free tier)
 #    Copy the Redis connection string (it looks like rediss://...)
@@ -43,9 +43,9 @@ fly postgres attach iftarootv2-db --app iftarootv2-backend
 fly secrets set \
   JWT_SECRET="$(openssl rand -hex 32)" \
   REDIS_URL="rediss://<upstash-password>@<upstash-host>:6379" \
-  FRONTEND_URL="https://iftarootv2-frontend.fly.dev" \
+  FRONTEND_URL="https://iftaroot-frontend.fly.dev" \
   PORT="8080" \
-  --app iftarootv2-backend
+  --app iftaroot-backend
 
 # 8. Get your Fly API token for GitHub Actions
 fly auth token
@@ -62,7 +62,7 @@ fly auth token
 **Files:**
 - Modify: `nginx.conf`
 
-The nginx `/api/` location currently points to `http://backend:8080` (docker-compose DNS). On Fly.io, the backend is reachable at `iftarootv2-backend.internal:8080`. Also, WebSocket connections use the path `/api/v1/ws/...` (not `/ws/`), so we need a specific location block with upgrade headers.
+The nginx `/api/` location currently points to `http://backend:8080` (docker-compose DNS). On Fly.io, the backend is reachable at `iftaroot-backend.internal:8080`. Also, WebSocket connections use the path `/api/v1/ws/...` (not `/ws/`), so we need a specific location block with upgrade headers.
 
 **Step 1: Update nginx.conf**
 
@@ -82,7 +82,7 @@ server {
 
     # WebSocket upgrade — must come BEFORE the /api/ block (more specific wins)
     location /api/v1/ws/ {
-        proxy_pass http://iftarootv2-backend.internal:8080;
+        proxy_pass http://iftaroot-backend.internal:8080;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -93,7 +93,7 @@ server {
 
     # REST API proxy
     location /api/ {
-        proxy_pass http://iftarootv2-backend.internal:8080;
+        proxy_pass http://iftaroot-backend.internal:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -103,7 +103,7 @@ server {
 ```
 
 Key changes:
-- `http://backend:8080` → `http://iftarootv2-backend.internal:8080` (Fly private DNS)
+- `http://backend:8080` → `http://iftaroot-backend.internal:8080` (Fly private DNS)
 - Removed unused `/ws/` block
 - Added specific `/api/v1/ws/` block with WebSocket upgrade headers + 1hr timeouts
 - Added `X-Forwarded-*` headers to REST block for correct IP forwarding
@@ -130,7 +130,7 @@ git commit -m "fix(nginx): route WS upgrades via /api/v1/ws/ and switch to Fly i
 **Files:**
 - Modify: `Dockerfile.frontend`
 
-Vite bakes `VITE_*` env vars into the JS bundle at build time. For production, `VITE_WS_BASE_URL` must be `wss://iftarootv2-frontend.fly.dev` so WebSocket connections go through nginx (which then proxies to backend via `.internal`). The value is passed as a Docker build arg.
+Vite bakes `VITE_*` env vars into the JS bundle at build time. For production, `VITE_WS_BASE_URL` must be `wss://iftaroot-frontend.fly.dev` so WebSocket connections go through nginx (which then proxies to backend via `.internal`). The value is passed as a Docker build arg.
 
 **Step 1: Update the builder stage in Dockerfile.frontend**
 
@@ -185,7 +185,7 @@ This is the Fly.io app configuration for the Go backend. The backend is deployed
 ```toml
 # Fly.io configuration for the Go backend
 # Deploy with: flyctl deploy --config fly.backend.toml
-app = "iftarootv2-backend"
+app = "iftaroot-backend"
 primary_region = "iad"
 
 [build]
@@ -231,14 +231,14 @@ This is the Fly.io app configuration for the frontend nginx. This app IS publicl
 ```toml
 # Fly.io configuration for the React/nginx frontend
 # Deploy with: flyctl deploy --config fly.frontend.toml
-app = "iftarootv2-frontend"
+app = "iftaroot-frontend"
 primary_region = "iad"
 
 [build]
   dockerfile = "Dockerfile.frontend"
   target = "prod"
   [build.args]
-    VITE_WS_BASE_URL = "wss://iftarootv2-frontend.fly.dev"
+    VITE_WS_BASE_URL = "wss://iftaroot-frontend.fly.dev"
 
 [http_service]
   internal_port = 80
@@ -253,7 +253,7 @@ primary_region = "iad"
   cpus = 1
 ```
 
-**Why `wss://iftarootv2-frontend.fly.dev`?** The frontend pages construct WebSocket URLs as `${WS_BASE}/api/v1/ws/...`. Setting `WS_BASE` to the frontend domain means the WS connection hits the nginx proxy, which has a `/api/v1/ws/` location block that handles the upgrade and forwards to the backend.
+**Why `wss://iftaroot-frontend.fly.dev`?** The frontend pages construct WebSocket URLs as `${WS_BASE}/api/v1/ws/...`. Setting `WS_BASE` to the frontend domain means the WS connection hits the nginx proxy, which has a `/api/v1/ws/` location block that handles the upgrade and forwards to the backend.
 
 **Step 2: Commit**
 
@@ -362,7 +362,7 @@ JWT_SECRET=change-me-in-production
 PORT=8081
 
 # Local dev: Vite dev server URL
-# Fly.io prod: https://iftarootv2-frontend.fly.dev
+# Fly.io prod: https://iftaroot-frontend.fly.dev
 FRONTEND_URL=http://localhost:5173
 
 # ── Frontend (VITE_ prefix exposes to browser bundle) ─────────────────────
@@ -409,18 +409,18 @@ After the first deploy:
 
 **1. Test frontend is reachable:**
 ```bash
-curl -I https://iftarootv2-frontend.fly.dev
+curl -I https://iftaroot-frontend.fly.dev
 # Expected: HTTP/2 200
 ```
 
 **2. Test API proxy:**
 ```bash
-curl https://iftarootv2-frontend.fly.dev/api/v1/health
+curl https://iftaroot-frontend.fly.dev/api/v1/health
 # Expected: 200 OK (or whatever your health endpoint returns)
 ```
 
 **3. Test WebSocket (browser):**
-- Open https://iftarootv2-frontend.fly.dev in a browser
+- Open https://iftaroot-frontend.fly.dev in a browser
 - Open DevTools → Network tab → filter by "WS"
 - Start or join a game
 - Expected: WebSocket connection shows status 101 (Switching Protocols)
@@ -442,14 +442,14 @@ git push origin main
 
 **Backend not reachable from nginx:**
 ```bash
-fly logs --app iftarootv2-backend
+fly logs --app iftaroot-backend
 # Check for startup errors (DB connection, migration failures)
 ```
 
 **WebSocket connections failing:**
 - Verify the nginx `/api/v1/ws/` location block is in place (Task 1)
-- Check that `VITE_WS_BASE_URL` is `wss://iftarootv2-frontend.fly.dev` in the deployed bundle:
-  - DevTools → Sources → search for `iftarootv2-frontend.fly.dev`
+- Check that `VITE_WS_BASE_URL` is `wss://iftaroot-frontend.fly.dev` in the deployed bundle:
+  - DevTools → Sources → search for `iftaroot-frontend.fly.dev`
 
 **Deploy job not triggered:**
 - Verify `FLY_API_TOKEN` secret exists in GitHub repo settings
@@ -458,6 +458,6 @@ fly logs --app iftarootv2-backend
 **Fly machine quota exceeded (free tier limit):**
 ```bash
 fly apps list  # check how many apps exist
-fly machines list --app iftarootv2-backend  # check machine count
+fly machines list --app iftaroot-backend  # check machine count
 ```
 Free tier allows 3 shared-cpu-1x machines. With 2 apps (backend + frontend = 2 machines) you're within limits.

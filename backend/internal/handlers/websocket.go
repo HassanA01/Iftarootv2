@@ -11,8 +11,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 
-	"github.com/HassanA01/Iftarootv2/backend/internal/game"
-	"github.com/HassanA01/Iftarootv2/backend/internal/hub"
+	"github.com/HassanA01/Iftaroot/backend/internal/game"
+	"github.com/HassanA01/Iftaroot/backend/internal/hub"
 )
 
 func newUpgrader(frontendURL string) *websocket.Upgrader {
