@@ -14,10 +14,16 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
+const AUTH_ENDPOINTS = ["/auth/login", "/auth/register"];
+
 apiClient.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401) {
+    const requestUrl = err.config?.url ?? "";
+    const isAuthEndpoint = AUTH_ENDPOINTS.some((ep) =>
+      requestUrl.startsWith(ep)
+    );
+    if (err.response?.status === 401 && !isAuthEndpoint) {
       useAuthStore.getState().clearAuth();
       window.location.href = "/login";
     }
